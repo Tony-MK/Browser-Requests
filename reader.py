@@ -6,18 +6,17 @@ MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
 def read_line(file):
+
     for line in file:
-        return line;
-        
-def read(file_path):
+        return line.strip(',\n') + '}';
 
-    stat = os.stat(file_path);
 
-    print('Reading network log file ( %.3f MB)  %s ....'%( stat.st_size / MEGA_BYTE, file_path));
+def get_events(file):
+
 
     with open(file_path, 'r') as file:
 
-        constants = json.loads(read_line(file).strip(',\n') + '}');
+        constants = json.loads(read_line(file));
 
         if constants == None:
             return;
@@ -34,23 +33,14 @@ def read(file_path):
 
         read_line(file);
 
-        for event in file:
+        for event in file
 
-            index += 1;
-
-            if index > 10000000:
-                break;
-
-
-            event = decodeLine(line = event.strip(']}') + '}' if event[-2: ] == ']}' else event.strip(',\n'))
+            event = json.loads(line = event.strip(']}') + '}' if event[-2: ] == ']}' else event.strip(',\n') + '}')
 
             add_keys(event)
            
-            if event['source']['type'] == 1 and 'params' in event:
+            if event['source']['type'] == 1:
 
-                if 'source_dependency' in event['params']:
-                    event['params']['source_dependency']['type'] = SOURCE_TYPES[event['params']['source_dependency']['type']];
-                    pass;
 
                 event['phase'] = LOG_PHASES[event['phase']];
                 event['source']['type'] = SOURCE_TYPES[event['source']['type']]
@@ -58,5 +48,37 @@ def read(file_path):
                 event['source']['start_time'] = ((start_time + int(event['source']['start_time']))) - 10800;
                 event['time'] = ((start_time + int(event['time']))) - 10800;
 
+                if 'params' in event:
+                
+                    if 'source_dependency' in event['params']:
+                        event['params']['source_dependency']['type'] = SOURCE_TYPES[event['params']['source_dependency']['type']];
+                        pass;
 
-for event in rea('C://Users/Tony/Desktop/network_log.json'):
+                else:
+
+                    event['params'] = {};
+                    pass;
+
+
+
+def read(file_path):
+
+    stat = os.stat(file_path);
+
+    print('Reading network log file ( %.3f MB)  %s ....'%( stat.st_size / GIGA_BYTE, file_path));
+
+    for event in read_file(file):
+
+        index += 1;
+
+        if index < 10000000:
+
+            
+
+
+
+def read_test():
+    for event in read('C://Users/Tony/Desktop/network_log.json'):
+        print(event);
+
+read_test();
