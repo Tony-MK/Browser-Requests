@@ -1,3 +1,4 @@
+import time;
 import json;
 import os;
 
@@ -8,50 +9,46 @@ GIGA_BYTE = 2 ** 30;
 def read_line(file):
 
     for line in file:
-        return line.strip(',\n') + '}';
+        return line;
 
 
-def get_events(file):
+def read_events(file_path):
 
+    stat = os.stat(file_path);
+
+    print('Reading network events log file. Size : %.3f GB  Path : %s'%( stat.st_size / GIGA_BYTE, file_path));
 
     with open(file_path, 'r') as file:
 
-        constants = json.loads(read_line(file));
+        constants = json.loads(read_line(file).strip(',\n') + '}')['constants'];
 
-        if constants == None:
-            return;
+        constants['logEventPhaseMap'] = {constants['logEventPhase'][c] : c  for c in constants['logEventPhase']};
 
-        LOG_PHASES = {constants['constants']['logEventPhase'][c] : c  for c in constants['constants']['logEventPhase']};
+        constants['logSourceTypeMap'] = {constants['logSourceType'][c] : c  for c in constants['logSourceType']};
 
-        SOURCE_TYPES = {constants['constants']['logSourceType'][c] : c  for c in constants['constants']['logSourceType']};
-
-        EVENT_TYPES = {constants['constants']['logEventTypes'][c] : c  for c in constants['constants']['logEventTypes']};
-
-        start_time = constants['constants']['timeTickOffset'];
-
-        index = 0;
+        constants['logEventTypesMap'] = {constants['logEventTypes'][c] : c  for c in constants['logEventTypes']};
 
         read_line(file);
 
-        for event in file
+        n_events = 0;
 
-            event = json.loads(line = event.strip(']}') + '}' if event[-2: ] == ']}' else event.strip(',\n') + '}')
+        for event in file:
 
-            add_keys(event)
+            event = json.loads(s = event.strip(']}') + '}' if event[-2: ] == ']}' else event.strip(',\n'))
            
             if event['source']['type'] == 1:
 
+                event['source']['start_time'] = ((constants['timeTickOffset'] + int(event['source']['start_time']))) - 10800;
+                event['time'] = ((constants['timeTickOffset'] + int(event['time']))) - 10800;
+                event['source']['type'] = constants['logSourceTypeMap'][event['source']['type']]
+                event['phase'] = constants['logEventPhaseMap'][event['phase']];
+                event['type']  = constants['logEventTypesMap'][event['type']];
 
-                event['phase'] = LOG_PHASES[event['phase']];
-                event['source']['type'] = SOURCE_TYPES[event['source']['type']]
-                event['type']  = EVENT_TYPES[event['type']];
-                event['source']['start_time'] = ((start_time + int(event['source']['start_time']))) - 10800;
-                event['time'] = ((start_time + int(event['time']))) - 10800;
 
                 if 'params' in event:
                 
                     if 'source_dependency' in event['params']:
-                        event['params']['source_dependency']['type'] = SOURCE_TYPES[event['params']['source_dependency']['type']];
+                        event['params']['source_dependency']['type'] = constants['logSourceTypeMap'][event['params']['source_dependency']['type']];
                         pass;
 
                 else:
@@ -59,26 +56,67 @@ def get_events(file):
                     event['params'] = {};
                     pass;
 
+                yield event;
+
+                n_events += 1;
+
+                if n_events%100 == 0:
+                    print('Read %d Events'%n_events);
+                    pass;
+
+                elif n_events > 10000000:
+                    return;
+
+def create_dir(path):
+
+    levels = path.split('/');
+
+    for level in range(2, len(levels) + 1):
+
+        path = '/'.join(levels[:level]);
+
+        if os.path.exists(path) == False:
+
+            print(level,' Created %s Directory...'%(path));
+            os.mkdir(path);
+            pass;
+
 
 
 def read(file_path):
 
-    stat = os.stat(file_path);
+    sources = dict();
 
-    print('Reading network log file ( %.3f MB)  %s ....'%( stat.st_size / GIGA_BYTE, file_path));
+    last_saved = time.perf_counter();
 
-    for event in read_file(file):
+    for event in read_events(file_path):
 
-        index += 1;
+        if event['source']['id'] not in sources:
+            print(event['params']['url'])
+            sources[event['source']['id']] = {
+                'dir' :  './logs/' + event['params']['url'].replace(':/','').split('?')[0].split('#')[0],
+                'name' : event['params']['method'],
+                'events' : list(),
+            };
 
-        if index < 10000000:
+        source_id = event['source']['id'];
+        del event['source'];
+        sources[source_id]['events'].append(event);
 
-            
+        for source in sources.values():
 
+            if os.path.exists(source['dir']) == False:
+                create_dir(path = source['dir']);
+                pass
+
+            with open('%s/%s.json'%(source['dir'], source['name']), mode = 'w') as file:
+                json.dump(source['events'], file, indent = 3)
+                pass;
 
 
 def read_test():
-    for event in read('C://Users/Tony/Desktop/network_log.json'):
-        print(event);
+
+    read('C://Users/Tony/Desktop/network_log.json');
+    pass;
 
 read_test();
