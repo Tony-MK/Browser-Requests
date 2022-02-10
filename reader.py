@@ -21,7 +21,7 @@ def read_events(file_path):
     with open(file_path, 'r') as file:
 
         constants = json.loads(read_line(file).strip(',\n') + '}')['constants'];
-        print(constants)
+        print(json.dumps(constants, indent = 3));
 
         constants['logEventPhaseMap'] = {constants['logEventPhase'][c] : c  for c in constants['logEventPhase']};
 
@@ -35,26 +35,25 @@ def read_events(file_path):
 
         for event in file:
 
+            if 'params' not in event:
+                continue;
+
             event = json.loads(s = event.strip(']}') + '}' if event[-2: ] == ']}' else event.strip(',\n'))
-           
-            if event['source']['type'] == 1:
+            
+            if 'params' not in event or event['params'] == {}:
+                continue;
+
+            event['source']['type'] = constants['logSourceTypeMap'][event['source']['type']]
+
+            if 'HTTP' in event['source']['type'] or 'URL' in event['source']['type']:
 
                 event['source']['start_time'] = ((constants['timeTickOffset'] + int(event['source']['start_time']))) - 10800;
                 event['time'] = ((constants['timeTickOffset'] + int(event['time']))) - 10800;
-                event['source']['type'] = constants['logSourceTypeMap'][event['source']['type']]
                 event['phase'] = constants['logEventPhaseMap'][event['phase']];
                 event['type']  = constants['logEventTypesMap'][event['type']];
 
-
-                if 'params' in event:
-                
-                    if 'source_dependency' in event['params']:
-                        event['params']['source_dependency']['type'] = constants['logSourceTypeMap'][event['params']['source_dependency']['type']];
-                        pass;
-
-                else:
-
-                    event['params'] = {};
+                if 'source_dependency' in event['params']:
+                    event['params']['source_dependency']['type'] = constants['logSourceTypeMap'][event['params']['source_dependency']['type']];
                     pass;
 
                 yield event;
@@ -88,33 +87,56 @@ def read(file_path):
 
     sources = dict();
 
-    last_saved = time.perf_counter();
+    endpoints = dict();
+
 
     for event in read_events(file_path):
 
         if event['source']['id'] not in sources:
 
-            sources[event['source']['id']] = {
-                'dir' :  './logs/' + event['params']['url'].replace(':/','').split('?')[0].split('#')[0],
-                'name' : event['params']['method'],
-                'events' : list(),
-            };
+            if 'source_dependency' not in event['params']:
 
-        source_id = event['source']['id'];
+                if 'url' in event['params']:
 
-        del event['source'];
+                    sources[event['source']['id']] = event['params']['url'];
 
-        sources[source_id]['events'].append(event);
+                    if event['params']['url'] not in endpoints:
 
-        for source in sources.values():
+                        endpoints[event['params']['url']] = {
+                            'events' : list()
+                        }
 
-            if os.path.exists(source['dir']) == False:
-                create_dir(path = source['dir']);
-                pass
+                else:
 
-            with open('%s/%s.json'%(source['dir'], source['name']), mode = 'w') as file:
-                json.dump(source['events'], file, indent = 3)
+                    print(event);
+                    continue;
+
+
+            elif event['params']['source_dependency']['id'] in sources:
+                sources[event['source']['id']] = sources[event['params']['source_dependency']['id']];
                 pass;
+
+            else:
+
+                print('SOURCE', event);
+                continue;
+
+        endpoints[sources[event['source']['id']]]['events'].append(event);
+
+
+def save(sources):
+
+    for source in sources.values():
+
+        source['dir'] = './logs/%s/%s'%(event['source']['type'], event['params']['url'].replace(':/','').split('?')[0].split('#')[0]);
+
+        if os.path.exists(source['dir']) == False:
+            create_dir(path = source['dir']);
+            pass
+
+        with open('%s/%s.json'%(source['dir'], source['name']), mode = 'w') as file:
+            json.dump(source['events'], file, indent = 3)
+            pass;
 
 
 def read_test():
