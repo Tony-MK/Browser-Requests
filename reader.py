@@ -6,22 +6,21 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-def read_line(file):
-
-    for line in file:
-        return line;
-
-
-def read_events(file_path):
-
-    stat = os.stat(file_path);
-
-    print('Reading network events log file. Size : %.3f GB  Path : %s'%( stat.st_size / GIGA_BYTE, file_path));
+def scan(file_path):
 
     with open(file_path, 'r') as file:
 
-        constants = json.loads(read_line(file).strip(',\n') + '}')['constants'];
-        print(json.dumps(constants, indent = 3));
+        stat = os.stat(file_path);
+
+        print('Scan network events log file. Scanned : %.2f GB / %.2f GB  (%.3f%s) Path : %s'%( file.tell() / GIGA_BYTE, stat.st_size / GIGA_BYTE, file.tell() / stat.st_size , '%', file_path));
+
+        lines = file.read(MEGA_BYTE * 128).split(',\n');
+        file.seek(file.tell() - len(lines[-1]));
+        del lines[-1];
+            
+        constants =  json.loads(lines[0].strip(',\n') + '}')['constants'];
+
+        del lines[0];
 
         constants['logEventPhaseMap'] = {constants['logEventPhase'][c] : c  for c in constants['logEventPhase']};
 
@@ -29,43 +28,75 @@ def read_events(file_path):
 
         constants['logEventTypesMap'] = {constants['logEventTypes'][c] : c  for c in constants['logEventTypes']};
 
-        read_line(file);
+        yield constants;
 
-        n_events = 0;
+        lines[0] = lines[0].split('\n')[-1];
 
-        for event in file:
 
-            if 'params' not in event:
-                continue;
 
-            event = json.loads(s = event.strip(']}') + '}' if event[-2: ] == ']}' else event.strip(',\n'))
-            
-            if 'params' not in event or event['params'] == {}:
-                continue;
+        while True:
 
-            event['source']['type'] = constants['logSourceTypeMap'][event['source']['type']]
+            print('Scan network events log file. Scanned : %.2f GB / %.2f GB  (%.3f%s) Path : %s'%( file.tell() / GIGA_BYTE, stat.st_size / GIGA_BYTE, file.tell() / stat.st_size * 100 , '%', file_path));
 
-            if 'HTTP' in event['source']['type'] or 'URL' in event['source']['type']:
+            for line in lines:
 
-                event['source']['start_time'] = ((constants['timeTickOffset'] + int(event['source']['start_time']))) - 10800;
-                event['time'] = ((constants['timeTickOffset'] + int(event['time']))) - 10800;
-                event['phase'] = constants['logEventPhaseMap'][event['phase']];
-                event['type']  = constants['logEventTypesMap'][event['type']];
+                try:
+                    
+                    yield json.loads(line.strip(',\n'));
 
-                if 'source_dependency' in event['params']:
-                    event['params']['source_dependency']['type'] = constants['logSourceTypeMap'][event['params']['source_dependency']['type']];
-                    pass;
+                except json.decoder.JSONDecodeError as e:
+                    print(line);
+                    raise e;
 
-                yield event;
+            lines = file.read(MEGA_BYTE * 128).split(',\n');
+            file.seek(file.tell() - len(lines[-1]));
+            del lines[-1];
+            pass;
 
-                n_events += 1;
+def read_line(reader):
+    for line in reader:
+        return line;
 
-                if n_events%100 == 0:
-                    print('Read %d Events'%n_events);
-                    pass;
 
-                elif n_events > 10000000:
-                    return;
+def read_events(file_path):
+
+    reader = scan(file_path);
+
+    constants = read_line(reader);
+
+    print(json.dumps(constants, indent = 3));
+
+    n_events = 0;
+
+    for event in reader:
+        continue;
+
+        if 'params' not in event or event['params'] == {}:
+            continue;
+
+        event['source']['type'] = constants['logSourceTypeMap'][event['source']['type']]
+
+        if 'HTTP' in event['source']['type'] or 'URL' in event['source']['type']:
+
+            event['source']['start_time'] = ((constants['timeTickOffset'] + int(event['source']['start_time']))) - 10800;
+            event['time'] = ((constants['timeTickOffset'] + int(event['time']))) - 10800;
+            event['phase'] = constants['logEventPhaseMap'][event['phase']];
+            event['type']  = constants['logEventTypesMap'][event['type']];
+
+            if 'source_dependency' in event['params']:
+                event['params']['source_dependency']['type'] = constants['logSourceTypeMap'][event['params']['source_dependency']['type']];
+                pass;
+
+            yield event;
+
+            n_events += 1;
+
+            if n_events%100 == 0:
+                print('Read %d Events'%n_events);
+                pass;
+
+            elif n_events > 10000000:
+                return;
 
 def create_dir(path):
 
