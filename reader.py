@@ -21,6 +21,7 @@ def read_events(file_path):
     with open(file_path, 'r') as file:
 
         constants = json.loads(read_line(file).strip(',\n') + '}')['constants'];
+        print(constants)
 
         constants['logEventPhaseMap'] = {constants['logEventPhase'][c] : c  for c in constants['logEventPhase']};
 
@@ -92,7 +93,7 @@ def read(file_path):
     for event in read_events(file_path):
 
         if event['source']['id'] not in sources:
-            print(event['params']['url'])
+
             sources[event['source']['id']] = {
                 'dir' :  './logs/' + event['params']['url'].replace(':/','').split('?')[0].split('#')[0],
                 'name' : event['params']['method'],
@@ -100,7 +101,9 @@ def read(file_path):
             };
 
         source_id = event['source']['id'];
+
         del event['source'];
+
         sources[source_id]['events'].append(event);
 
         for source in sources.values():
