@@ -8,13 +8,12 @@ GIGA_BYTE = 2 ** 30;
 
 def scan(file_path):
 
+    stat = os.stat(file_path);
     with open(file_path, 'r') as file:
-
-        stat = os.stat(file_path);
 
         print('Scan network events log file. Scanned : %.2f GB / %.2f GB  (%.3f%s) Path : %s'%( file.tell() / GIGA_BYTE, stat.st_size / GIGA_BYTE, file.tell() / stat.st_size , '%', file_path));
 
-        lines = file.read(MEGA_BYTE * 128).split(',\n');
+        lines = file.read(MEGA_BYTE * 64).split(',\n');
         file.seek(file.tell() - len(lines[-1]));
         del lines[-1];
             
@@ -32,11 +31,9 @@ def scan(file_path):
 
         lines[0] = lines[0].split('\n')[-1];
 
-
-
         while True:
 
-            print('Scan network events log file. Scanned : %.2f GB / %.2f GB  (%.3f%s) Path : %s'%( file.tell() / GIGA_BYTE, stat.st_size / GIGA_BYTE, file.tell() / stat.st_size * 100 , '%', file_path));
+            print('Scan network events log file. Scanned : %.3f GB / %.3f GB  (%.3f%s) Path : %s'%( file.tell() / GIGA_BYTE, stat.st_size / GIGA_BYTE, file.tell() / stat.st_size * 100 , '%', file_path));
 
             for line in lines:
 
@@ -48,11 +45,10 @@ def scan(file_path):
                     print(line);
                     raise e;
 
-            lines = file.read(MEGA_BYTE * 128).split(',\n');
+            lines = file.read(MEGA_BYTE * 64).split(',\n');
             file.seek(file.tell() - len(lines[-1]));
             del lines[-1];
-            pass;
-
+            
 def read_line(reader):
     for line in reader:
         return line;
