@@ -10,7 +10,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-BATCH_SIZE = MEGA_BYTE * 96;
+BATCH_SIZE = MEGA_BYTE * 4;
 
 TIME_ZONE = 10800 * int(10 ** 3);
 
@@ -139,62 +139,67 @@ def scan_hosts(dir_path, hosts):
             continue;
 
         elif event['source']['id'] in sources:
+            urls[sources[event['source']['id']]]['event'] = event; 
             urls[sources[event['source']['id']]]['events'][-1].append(event);
-            continue;
+            pass;
 
-        elif 'source_dependency' in event['params'] and event['params']['source_dependency']['id'] in sources:
+        if 'source_dependency' in event['params'] and event['params']['source_dependency']['id'] in sources:
 
             sources[event['source']['id']] = sources[event['params']['source_dependency']['id']];
-
+            urls[sources[event['source']['id']]]['event'] = event; 
             urls[sources[event['source']['id']]]['events'][-1].append(event);
-            continue;
+            pass;
 
-        elif 'url' not in event['params']:
-            continue;
+        elif set(['url', 'method']).is_subset(set(event['params'].keys())):
 
-        for host in hosts:
+            for host in hosts:
 
-            if host not in event['params']['url']:
-                continue
+                if host in event['params']['url']:
 
-            for route in hosts[host]:
+                    for route in hosts[host]:
 
-                if route['cache'] < datetime.utcnow().timestamp() - event['time']:
-                    continue;
+                        if route['route'] in event['params']['url'] and route['cache'] > datetime.utcnow().timestamp() - event['source']['start_time']:
 
-                elif route['route'] in event['params']['url']:
+                            sources[event['source']['id']] = event['params']['url'];
 
-                    sources[event['source']['id']] = event['params']['url'];
+                            if event['params']['url'] in urls:
+                                urls[sources[event['source']['id']]]['event'] = event; 
+                                urls[event['params']['url']]['events'].append([event]);
+                                print(len(urls[sources[event['source']['id']]]['events']), ' New Endpoint Request: ' + sources[event['source']['id']]);
+                            
+                            else:
 
-                    if event['params']['url'] in urls:
+                                urls[event['params']['url']] = {
+                                    'event' : event,
+                                    'events' : [[event]],
+                                };
 
-                        urls[event['params']['url']]['events'].append([event]);
-                        print(len(urls[sources[event['source']['id']]]['events']), ' New Endpoint Request: ' + sources[event['source']['id']]);
-                    
-                    else:
+                                print(len(urls), ' New Endpoint: ' + sources[event['source']['id']]);
 
-                        urls[event['params']['url']] = {
-                            'events' : [[event]],
-                        };
+                            break;
 
-                        print(len(urls), ' New Endpoint: ' + sources[event['source']['id']]);
-
-
+                    break;
 
 
 
 
 
+def main():
+    
+    hosts = {
 
-hosts = {
+        'pinnacle.com' : [ 
+            {'route' : '/0.1/matchups' , 'cache' :  TIME_ZONE},
+            {'route' : '/0.1/leagues' , 'cache' :  TIME_ZONE},
+            {'route' : '/0.1/status' , 'cache' :  TIME_ZONE},
+        ],
 
-    'pinnacle.com' : [ 
-        {'route' : '/0.1/matchups' , 'cache' :  TIME_ZONE},
-        {'route' : '/0.1/leagues' , 'cache' :  TIME_ZONE},
-        {'route' : '/0.1/status' , 'cache' :  TIME_ZONE},
-    ],
-
-};
+    };
 
 
-scan_hosts(dir_path = 'C://Users/Tony/Desktop/BetBot/Profiles/Logs/Network', hosts = hosts);
+    scan_hosts(dir_path = '.\logs', hosts = hosts);
+
+
+if __name__ == '__main__':
+    main()
+
