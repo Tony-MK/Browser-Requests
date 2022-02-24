@@ -62,8 +62,7 @@ int main(int argc, char const *argv[])
 
 
 	decode_constansts();
-	printf("\n");
-	fseek(logs.file, 10, SEEK_CUR);
+	fseek(logs.file, 100, SEEK_CUR);
 
 	long line_index, position = (0x1, ftell(logs.file));
 
@@ -75,11 +74,7 @@ int main(int argc, char const *argv[])
 		int value = 0;
 
 		char c = fgetc(logs.file);
-		char *key = (char*)malloc(sizeof(char) * 100000000);
-
-
-		switch (c)
-		{
+		switch (c){
 
 			case '\n':
 				++line_index;
@@ -93,22 +88,12 @@ int main(int argc, char const *argv[])
 
 
 		 	case '{':
-		 		fgetc(logs.file);
-			 	for (int i = 0; i < 100000000; ++i)
-			 	{
-			 		/* code */
-			 		c = fgetc(logs.file);
-			 		if (c == '"'){
-			 			break;
-			 		};
-			 		key[i] = c;
-			 	};
-			 	break;
-		 	
+				printf("%c", c);
+
 		 	case ':':
-				fscanf(logs.file, "%[^,]%d", &value);
-		 		printf("\nKey: %s %d",key, value);
-		 		break;
+		 		fscanf(logs.file, "%[^,]%d", &value);
+		 		printf("\n%d\n", value);
+
 
 		 	default:
 				printf("%c", c);
@@ -118,8 +103,7 @@ int main(int argc, char const *argv[])
 		};
  		
  	};
-
- 	printf("\n\nCode: %d Line : %d %d Bytes\n", code, line_index, position);
+ 	printf("Code: %d Line : %d %d Bytes\n", code, line_index, position);
  	printf("Log Size: %d Bytes\nMap Size: %d Bytes", ftell(logs.file), ftell(logs.map_file) );
  	fclose(logs.map_file);
 

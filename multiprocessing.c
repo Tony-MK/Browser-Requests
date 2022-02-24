@@ -1,12 +1,14 @@
 // C++ program to demonstrate creating processes using fork()
 #include <unistd.h>
 #include <stdio.h>
-  
+#include <process.h>
+
 
 int main()
 {
+
     // Creating first child
-    int n1 = fork();
+    int n1 = beginthread();
   
     // Creating second child. First child
     // also executes this line and creates

@@ -1,4 +1,4 @@
-@echo off
+@echo on
 set OLDPATH=%PATH%
 set path=C:\MinGW\bin;%PATH%
 set LIBRARY_PATH=C:\MinGW\lib;C:\Users\Tony\Desktop\MinGW\lib
