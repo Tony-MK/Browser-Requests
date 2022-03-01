@@ -1,5 +1,6 @@
 from datetime import datetime;
-import glob;
+import glob
+import re;
 import time;
 import json;
 import os;
@@ -29,6 +30,9 @@ def save(sources):
         with open('%s/%s.json'%(source['dir'], source['name']), mode = 'w') as file:
             json.dump(source['events'], file, indent = 3)
             pass;
+
+
+
 
 
 def scan(file_path):
@@ -69,7 +73,6 @@ def scan(file_path):
                     print(line);
                     raise e;
 
-
             while round(file.tell() / os.stat(file_path).st_size, 3) == 1:
                 print('Awaiting log change....', end = '\r')
                 time.sleep(.3);
@@ -79,23 +82,17 @@ def scan(file_path):
             file.seek(file.tell() - len(lines[-1]));
             del lines[-1];
             
-
-def read_line(reader):
-    for line in reader:
-        return line;
-            
-
 def create_dir(path):
 
     levels = path.split('/');
 
-    for level in range(2, len(levels) + 1):
+    for depth in range(2, len(levels) + 1):
 
-        path = '/'.join(levels[:level]);
+        path = '/'.join(depth[:depth]);
 
         if os.path.exists(path) == False:
 
-            print(level,' Created %s Directory...'%(path));
+            print(depth,' Created %s Directory...'%(path));
             os.mkdir(path);
             pass;
 
@@ -111,90 +108,51 @@ def read(file_path):
 
         if 'params' in event:
 
-            if 'source_dependency' in event:
-                event['source_dependency']['type'] = constants['logSourceTypeMap'][event['source_dependency']['type']]
+            if 'source_dependency' in event["params"]:
+                event["params"]['source_dependency']['type'] = constants['logSourceTypeMap'][event["params"]['source_dependency']['type']]
 
+            event['source']['start_time'] = constants['timeTickOffset'] + int(event['source']['start_time'])
             event['source']['type'] = constants['logSourceTypeMap'][event['source']['type']]
-            event['source']['start_time'] = constants['timeTickOffset'] + int(event['source']['start_time']);
             event['time'] = constants['timeTickOffset'] + int(event['time'])
-            event['phase'] = constants['logEventPhaseMap'][event['phase']];
+            event['phase'] = constants['logEventPhaseMap'][event['phase']]
             event['type']  = constants['logEventTypesMap'][event['type']];
             yield event;
 
+            
+
        
 
-def scan_hosts(dir_path, hosts):
+def scan_dir(dir_path, hosts):
 
     sources = dict();
 
     urls = dict();
 
+    paths = dict();
+
     file_paths = glob.glob(dir_path + '/*.json');
 
-    print('Scanning ' + str(len(file_paths))  + ' Network Logs | ' + dir_path + '\nReading ' + str(file_paths[-1])  + '......')
+    print('Scanning ' + str(len(file_paths))  + ' Network Logs | ' + dir_path );
+    
+    print('Reading ' + str(file_paths[-1])  + '......')
 
     for event in read(file_paths[-1]):
 
-        if 'HTTP' not in event['source']['type'] and 'URL' not in event['source']['type']:
-            continue;
-
-        elif event['source']['id'] in sources:
-            urls[sources[event['source']['id']]]['events'][-1].append(event);
-            continue;
+        
+        if event['source']['id'] in sources:
+            sources[event['source']['id']].events.append(event);
+            pass;
 
         elif 'source_dependency' in event['params'] and event['params']['source_dependency']['id'] in sources:
 
             sources[event['source']['id']] = sources[event['params']['source_dependency']['id']];
+            sources[event['source']['id']].events.append(event);
 
-            urls[sources[event['source']['id']]]['events'][-1].append(event);
-            continue;
+        elif 'url' in event['params'] and 'pinnacle.com' in event['params']['url']:        
 
-        elif 'url' not in event['params']:
-            continue;
+            path = hosts[0].add_path('://'.join(event['params']['url'].split('://')[1:]).split("/"));
+            if path != None:
+                print('Starting New %d Path Sources %d'%(len(hosts[0].paths), len(sources)));
+                path.events = [event];
+                sources[event['source']['id']] = path;                
 
-        for host in hosts:
-
-            if host not in event['params']['url']:
-                continue
-
-            for route in hosts[host]:
-
-                if route['cache'] < datetime.utcnow().timestamp() - event['time']:
-                    continue;
-
-                elif route['route'] in event['params']['url']:
-
-                    sources[event['source']['id']] = event['params']['url'];
-
-                    if event['params']['url'] in urls:
-
-                        urls[event['params']['url']]['events'].append([event]);
-                        print(len(urls[sources[event['source']['id']]]['events']), ' New Endpoint Request: ' + sources[event['source']['id']]);
-                    
-                    else:
-
-                        urls[event['params']['url']] = {
-                            'events' : [[event]],
-                        };
-
-                        print(len(urls), ' New Endpoint: ' + sources[event['source']['id']]);
-
-
-
-
-
-
-
-
-hosts = {
-
-    'pinnacle.com' : [ 
-        {'route' : '/0.1/matchups' , 'cache' :  TIME_ZONE},
-        {'route' : '/0.1/leagues' , 'cache' :  TIME_ZONE},
-        {'route' : '/0.1/status' , 'cache' :  TIME_ZONE},
-    ],
-
-};
-
-
-scan_hosts(dir_path = 'C://Users/Tony/Desktop/BetBot/Profiles/Logs/Network', hosts = hosts);
