@@ -5,8 +5,6 @@ import time;
 import json;
 import os;
 
-
-
 KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
@@ -21,78 +19,74 @@ def save(sources):
 
     for source in sources.values():
 
-        source['dir'] = './logs/%s/%s'%(event['source']['type'], event['params']['url'].replace(':/','').split('?')[0].split('#')[0]);
+        source["dir"] = "./logs/%s/%s"%(event["source"]["type"], event["params"]["url"].replace(":/","").split("?")[0].split("#")[0]);
 
-        if os.path.exists(source['dir']) == False:
-            create_dir(path = source['dir']);
+        if os.path.exists(source["dir"]) == False:
+            create_dir(path = source["dir"]);
             pass
 
-        with open('%s/%s.json'%(source['dir'], source['name']), mode = 'w') as file:
-            json.dump(source['events'], file, indent = 3)
+        with open("%s/%s.json"%(source["dir"], source["name"]), mode = "w") as file:
+            json.dump(source["events"], file, indent = 3)
             pass;
-
-
-
-
 
 def scan(file_path):
 
-    with open(file_path, 'r') as file:
+    with open(file_path, "r") as file:
 
-        lines = file.read(BATCH_SIZE).split(',\n');
+        lines = file.read(BATCH_SIZE).split(",\n");
         file.seek(file.tell() - len(lines[-1]));
         del lines[-1];
             
-        constants =  json.loads(lines[0].strip(',\n') + '}')['constants'];
+        constants =  json.loads(lines[0].strip(",\n") + "}")["constants"];
 
         del lines[0];
 
-        constants['timeTickOffset'] = int(constants['timeTickOffset']) - TIME_ZONE;
+        constants["timeTickOffset"] = int(constants["timeTickOffset"]) - TIME_ZONE;
 
-        constants['logEventPhaseMap'] = {constants['logEventPhase'][c] : c  for c in constants['logEventPhase']};
+        constants["logEventPhaseMap"] = {constants["logEventPhase"][c] : c  for c in constants["logEventPhase"]};
 
-        constants['logSourceTypeMap'] = {constants['logSourceType'][c] : c  for c in constants['logSourceType']};
+        constants["logSourceTypeMap"] = {constants["logSourceType"][c] : c  for c in constants["logSourceType"]};
 
-        constants['logEventTypesMap'] = {constants['logEventTypes'][c] : c  for c in constants['logEventTypes']};
+        constants["logEventTypesMap"] = {constants["logEventTypes"][c] : c  for c in constants["logEventTypes"]};
 
         yield constants;
 
-        lines[0] = lines[0].split('\n')[-1];
+        lines[0] = lines[0].split("\n")[-1];
 
         while True:
 
-            print('Scan network events log file. Scanned : %.3f GB / %.3f GB  (%.3f%s) Path : %s'%( file.tell() / GIGA_BYTE, os.stat(file_path).st_size / GIGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , '%', file_path));
+            print("Scan network events log file. Scanned : %.3f GB / %.3f GB  (%.3f%s) Path : %s"%( file.tell() / GIGA_BYTE, os.stat(file_path).st_size / GIGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path));
 
             for line in lines:
 
                 try:
                     
-                    yield json.loads(line.strip(',\n'));
+                    yield json.loads(line.strip(",\n"));
 
                 except json.decoder.JSONDecodeError as e:
                     print(line);
                     raise e;
 
             while round(file.tell() / os.stat(file_path).st_size, 3) == 1:
-                print('Awaiting log change....', end = '\r')
+                print("Awaiting log change....", end = "\r")
                 time.sleep(.3);
                 pass;
 
-            lines = file.read(BATCH_SIZE).split(',\n');
+            lines = file.read(BATCH_SIZE).split(",\n");
             file.seek(file.tell() - len(lines[-1]));
             del lines[-1];
             
 def create_dir(path):
 
-    levels = path.split('/');
+    levels = path.split("/");
 
     for depth in range(2, len(levels) + 1):
 
-        path = '/'.join(depth[:depth]);
+        path = "/".join(depth[:depth]);
 
         if os.path.exists(path) == False:
 
-            print(depth,' Created %s Directory...'%(path));
+            print(depth," Created %s Directory..."%(path));
             os.mkdir(path);
             pass;
 
@@ -106,53 +100,61 @@ def read(file_path):
 
     for event in reader:
 
-        if 'params' in event:
+        
+        if "params" not in event:
+            event["params"] = {};
 
-            if 'source_dependency' in event["params"]:
-                event["params"]['source_dependency']['type'] = constants['logSourceTypeMap'][event["params"]['source_dependency']['type']]
+        elif "source_dependency" in event["params"]:
+            event["params"]["source_dependency"]["type"] = constants["logSourceTypeMap"][event["params"]["source_dependency"]["type"]]
 
-            event['source']['start_time'] = constants['timeTickOffset'] + int(event['source']['start_time'])
-            event['source']['type'] = constants['logSourceTypeMap'][event['source']['type']]
-            event['time'] = constants['timeTickOffset'] + int(event['time'])
-            event['phase'] = constants['logEventPhaseMap'][event['phase']]
-            event['type']  = constants['logEventTypesMap'][event['type']];
-            yield event;
+        event["source"]["start_time"] = constants["timeTickOffset"] + int(event["source"]["start_time"])
+        event["source"]["type"] = constants["logSourceTypeMap"][event["source"]["type"]]
+        event["time"] = constants["timeTickOffset"] + int(event["time"])
+        event["phase"] = constants["logEventPhaseMap"][event["phase"]]
+        event["type"]  = constants["logEventTypesMap"][event["type"]];
 
-            
+        yield event;
 
-       
 
 def scan_dir(dir_path, hosts):
 
-    sources = dict();
+    file_paths = glob.glob(dir_path + "/*.json");
 
-    urls = dict();
-
-    paths = dict();
-
-    file_paths = glob.glob(dir_path + '/*.json');
-
-    print('Scanning ' + str(len(file_paths))  + ' Network Logs | ' + dir_path );
+    print("Scanning " + str(len(file_paths))  + " Network Logs | " + dir_path );
     
-    print('Reading ' + str(file_paths[-1])  + '......')
+    for file_path in file_paths:
 
-    for event in read(file_paths[-1]):
-
+        print("Reading " + str(file_path)  + "......")
         
-        if event['source']['id'] in sources:
-            sources[event['source']['id']].events.append(event);
-            pass;
+        sources = dict();
 
-        elif 'source_dependency' in event['params'] and event['params']['source_dependency']['id'] in sources:
+        for event in read(file_path):
+            
+            if event["source"]["id"] in sources:
+                sources[event["source"]["id"]].events.append(event);
 
-            sources[event['source']['id']] = sources[event['params']['source_dependency']['id']];
-            sources[event['source']['id']].events.append(event);
+            elif "source_dependency" in event["params"] and event["params"]["source_dependency"]["id"] in sources:
 
-        elif 'url' in event['params'] and 'pinnacle.com' in event['params']['url']:        
+                sources[event["source"]["id"]] = sources[event["params"]["source_dependency"]["id"]];
+                sources[event["source"]["id"]].events.append(event);
 
-            path = hosts[0].add_path('://'.join(event['params']['url'].split('://')[1:]).split("/"));
-            if path != None:
-                print('Starting New %d Path Sources %d'%(len(hosts[0].paths), len(sources)));
-                path.events = [event];
-                sources[event['source']['id']] = path;                
+            elif "url" in event["params"]:
+                url = event["params"]["url"]
+                scheme, url = url[:url.find("://")], url[url.find("://") + 3:];
+                name, url = url[:url.find("/")],  url[url.find("/") + 1:];
 
+                for host in hosts:
+                    if host.name in name:
+
+                        path = host.add(url);
+                        if path != None:
+                            #print("Starting New %d Path Sources %d, %s %s"%(host.get_size(), len(sources), scheme,  path.url));
+
+                            for e in path.events:
+                                if e['source']['id'] in sources:
+                                    del sources[e['source']['id']]
+
+                            path.events = [event];
+                            sources[event["source"]["id"]] = path;
+                        
+             
