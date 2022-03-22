@@ -1,56 +1,70 @@
-DEFAUT_CACHE_DURATION = 3600000;
+from typing import Any;
+
+DEFAUT_CACHE_DURATION = 3600;
     
    
-class Path:
+class Route:
 
-    def __init__(self, name, top = None, cache = DEFAUT_CACHE_DURATION) -> None:
+    def __init__(self, name, top, cache = DEFAUT_CACHE_DURATION) -> None:
         self.top = top;
         self.name = name;
-
-        self.endpoints = {};
         self.cache = cache;
-        self.paths = [];
-        self.events = [];
-        self.url = self.get_url();
-        print("Created new path :", self.url);
-        pass;
-    
-    def get_url(self):
-        if self.top == None:
-            return self.name;
-        return self.top.get_url() + "/" + self.name;
+        self.routes = list();
+        self.events = list();
+        self.methods = dict();
+
+        if isinstance(top, Route):
+            self.url = self.top.url + "/" + self.name;
+            self.top.routes.append(self);
+
+        else:
+
+            self.url = self.name;
+
     
     def __str__(self):
-        return  "\n".join([p.name for p in self.paths]);
+        return "\n" + self.url + "\nRoutes" + "\n".join([r.name for r in self.routes]) + "\n";
+
+    def find_route(self, name) :
+        for route in self.routes:
+            if route.name == name:
+                return route;
+    
+    def add(self, routes) -> object:
+        route = self.find_route(routes[0]);
+
+        if route == None:            
+            route = Route(name = routes[0], top = self);
+            print("Created new route :", route.url);
+
+        if len(routes) == 1:
+            return route
+        
+        return route.add(routes[1:])
+
+    def find(self, routes) -> Any:
+        route = self.find_route(routes[0]);
+
+        if isinstance(route, Route):
+            return route.find(routes[1:]);
+
+        elif isinstance(self.top, Route):
+            return self;
+
+        return None;
+    
+    def push(self, routes)
+    
+
 
     
-    def find_path(self, name) :
-        for path in self.paths:
-            if path.name == name:
-                return path;
-    
-
-    def push(self, routes):
-        path = self.find_path(routes[0]);
-
-        if path == None:            
-            path = Path(routes[0], self);
-            self.paths.append(path);
-
-        return path.push(routes[1:]) if len(routes) > 1 else path;
-    
-    def add(self, path):
-        return self.push(path.split("/"));
-    
-    def get_size(self, ):
-        return sum([p.get_size() for p in self.paths]) + len(self.paths);
+    def get_size(self) -> int:
+        return (sum([p.get_size() for p in self.routes]) + len(self.routes)) if len(self.routes) > 0 else len(self.routes);
         
             
-class Host(Path):
+class Host(Route):
 
-    def __init__(self, name, paths) -> None:
-        super().__init__(name);
-        list(map(self.add, paths));
-    
-    def __str__(self):
-        return self.name + "\n" + super().__str__()
+    def __init__(self, name, routes = []) -> None:
+        super().__init__(name = name, top = None);
+        list(map(self.add, routes));
+

@@ -15,5 +15,4 @@ hosts = [
 
 from scanner import scan_dir;
 
-print(hosts[0])
-scan_dir(dir_path = "C://Users/Tony/Desktop/Projects/BetBot/logs", hosts = hosts);
+scan_dir(dir_path = "%USERPROFILE%/Projects/BetBot/logs", hosts = hosts);
