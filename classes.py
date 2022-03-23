@@ -5,7 +5,7 @@ DEFAUT_CACHE_DURATION = 3600;
    
 class Route:
 
-    def __init__(self, name, top, cache = DEFAUT_CACHE_DURATION) -> None:
+    def __init__(self, name, top = None, cache = DEFAUT_CACHE_DURATION) -> None:
         self.top = top;
         self.name = name;
         self.cache = cache;
@@ -34,28 +34,25 @@ class Route:
     def add(self, routes) -> object:
         route = self.find_route(routes[0]);
 
-        if route == None:            
+        if route == None:   
             route = Route(name = routes[0], top = self);
-            print("Caching new url :", routes[0], route.url)
+            print("Caching new url : " + route.url, end = '\r')
+
         
         return (route if len(routes) < 2 else route.add(routes[1:]))
 
     def find(self, routes) -> Any:
         route = self.find_route(routes[0]);
 
-        if isinstance(route, Route):
-            return route.find(routes[1:]);
-
-        if isinstance(self.top, Route):
-            return self;
-
-        return (None);
+        if len(routes) > 1:
+            if route != None:
+                return (route.find(routes[1:]));
+        
+        return (route);
     
     def get_size(self) -> int:
         return (sum([r.get_size() for r in self.routes]) + len(self.routes));
         
             
 class Host(Route):
-
-    def __init__(self, name) -> None:
-        super().__init__(name = name, top = None);
+    pass;

@@ -24,7 +24,8 @@ def get_file_paths(dir_path):
     for file_num, file_path in  enumerate(glob.glob(dir_path + "/*.json")):
 
         if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
-            print(str(file_num) + ") Updated : " + str(int(datetime.now().timestamp() - os.stat(file_path).st_mtime)) + " seconds ago. Skipping  : %s...."%(file_path));
+            #print(str(file_num) + ") Updated : " + str(int(datetime.now().timestamp() - os.stat(file_path).st_mtime)) + " seconds ago. Skipping  : %s...."%(file_path));
+            pass;
 
         elif os.stat(file_path).st_size < 128:
             print("%d) Skipping Network Log File : %s...."%(file_num, file_path));
@@ -45,7 +46,7 @@ async def read(file_path, Hosts):
         try:
 
             constants = json.loads(lines[0].strip(",\n") + "}")["constants"];
-            
+
         except Exception as e:
             print(lines);
             raise e
