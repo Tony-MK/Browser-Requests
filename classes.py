@@ -14,16 +14,17 @@ class Route:
         self.methods = dict();
 
         if isinstance(top, Route):
-            self.url = self.top.url + "/" + self.name;
+            self.url = self.top.url  + "/" + self.name;
             self.top.routes.append(self);
 
         else:
 
             self.url = self.name;
+            pass;
 
     
     def __str__(self):
-        return "\n" + self.url + "\nRoutes" + "\n".join([r.name for r in self.routes]) + "\n";
+        return "\n" + self.url + "\nRoutes : " + str(self.get_size()) + "\n".join([r.name for r in self.routes]) + "\n";
 
     def find_route(self, name) :
         for route in self.routes:
@@ -35,12 +36,9 @@ class Route:
 
         if route == None:            
             route = Route(name = routes[0], top = self);
-            print("Created new route :", route.url);
-
-        if len(routes) == 1:
-            return route
+            print("Caching new url :", routes[0], route.url)
         
-        return route.add(routes[1:])
+        return (route if len(routes) < 2 else route.add(routes[1:]))
 
     def find(self, routes) -> Any:
         route = self.find_route(routes[0]);
@@ -48,23 +46,16 @@ class Route:
         if isinstance(route, Route):
             return route.find(routes[1:]);
 
-        elif isinstance(self.top, Route):
+        if isinstance(self.top, Route):
             return self;
 
-        return None;
-    
-    def push(self, routes)
-    
-
-
+        return (None);
     
     def get_size(self) -> int:
-        return (sum([p.get_size() for p in self.routes]) + len(self.routes)) if len(self.routes) > 0 else len(self.routes);
+        return (sum([r.get_size() for r in self.routes]) + len(self.routes));
         
             
 class Host(Route):
 
-    def __init__(self, name, routes = []) -> None:
+    def __init__(self, name) -> None:
         super().__init__(name = name, top = None);
-        list(map(self.add, routes));
-
