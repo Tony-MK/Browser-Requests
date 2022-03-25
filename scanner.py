@@ -10,7 +10,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 300;
+CACHE_DURATION = 180000;
 
 BATCH_SIZE = MEGA_BYTE * 96;
 
@@ -23,16 +23,10 @@ def get_file_paths(dir_path):
 
     for file_num, file_path in  enumerate(glob.glob(dir_path + "/*.json")):
 
-        if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
-            #print(str(file_num) + ") Updated : " + str(int(datetime.now().timestamp() - os.stat(file_path).st_mtime)) + " seconds ago. Skipping  : %s...."%(file_path));
-            pass;
-
-        elif os.stat(file_path).st_size < 128:
-            print("%d) Skipping Network Log File : %s...."%(file_num, file_path));
-            print("Size of log file is not valid : " + str(os.stat(file_path).st_size) + " Bytes\n");
-        
-        else:
+        if datetime.now().timestamp() - os.stat(file_path).st_mtime < CACHE_DURATION:
             file_paths.append(file_path);
+
+        #print(str(file_num) + ") Updated : " + str(int(datetime.now().timestamp() - os.stat(file_path).st_mtime)) + " seconds ago. Skipping  : %s...."%(file_path));
 
     file_paths.sort(key = lambda file_path : os.stat(file_path).st_mtime);
     return file_paths;
@@ -75,8 +69,7 @@ async def read(file_path, Hosts):
                     pass;
 
                 except json.decoder.JSONDecodeError as e:
-                    print(line);
-                    print(e);
+                    print(line, e);
                 
                 else:
 
@@ -93,51 +86,81 @@ async def read(file_path, Hosts):
                     event["type"]  = constants["logEventTypesMap"][event["type"]];
                     
                     if event["source"]["id"] in sources:
-                        sources[event["source"]["id"]].events.append(event);
+
+                        sources[event["source"]["id"]]["events"].append(event);
+
+                        if "bytes" in event["params"]:
+                            sources[event["source"]["id"]]["response"] += event["params"] + "bytes";
+                            pass;
+
+                        if event["phase"] == "PHASE_END":
+                            print(len(sources), event["type"] + " Ended ", len(sources[event["source"]["id"]].events), path.url);
+                            print(sources[event["source"]["id"]]["response"])
+                            del sources[event["source"]["id"]]                        
 
                     elif "source_dependency" in event["params"] and event["params"]["source_dependency"]["id"] in sources:
 
                         sources[event["source"]["id"]] = sources[event["params"]["source_dependency"]["id"]];
-                        sources[event["source"]["id"]].events.append(event);
+                        sources[event["source"]["id"]]["events"].append(event);
+
+                        if "bytes" in event["params"]:
+                            sources[event["source"]["id"]]["response"] += event["params"] + "bytes";
+                            pass;
+
+                        if event["phase"] == "PHASE_END":
+                            print(len(sources), event["type"] + " Ended ", len(sources[event["source"]["id"]].events), path.url);
+                            print(sources[event["source"]["id"]]["response"]);
+                            del sources[event["source"]["id"]]                        
+                        
 
                     elif "url" in event["params"]:
 
-                        url = event["params"]["url"]
+                        url = event["params"]["url"];
 
                         scheme, url = url[:url.find("://")], url[url.find("://") + 3:];
 
-                        host_name, url = url[:url.find("/")],  url[url.find("/") + 1:];
+                        host, url = url[:url.find("/")],  url[url.find("/") + 1:];
 
-                        if host_name not in Hosts:
-                            #print(scheme, host_name, url);
-                            continue;
+                        if host in Hosts:
 
-                        path = Hosts[host_name].find(url.split('/'));
+                            path = Hosts[host].find(url.split("/"));
+                            if path != None:
+                                
+                                if "method" in event["params"]:
 
-                        if path == None:
-                            continue;
+                                    path.methods[event["params"]["method"]] = {
+                                        "response" : "",
+                                        "events" : [event]
+                                    }
 
-                        for e in path.events:
-                            if e['source']['id'] in sources:
-                                del sources[e['source']['id']]
+                                    sources[event["source"]["id"]] = path.methods[event["params"]["method"]];
+                                
+                                    print("Starting New Events Sequence %d, %s://%s"%(len(sources), scheme,  path.url));
+                                    pass;
 
-                        path.events = [event];
-                        sources[event["source"]["id"]] = path;
-                        print("Starting New %d Path Sources %d, %s %s"%(path.get_size(), len(sources), scheme,  path.url));
-                        pass;
+                                elif "original_url" in event["params"]:
+                                    print(event["params"]["url"],  event["original_url"], event["params"].keys());
+                                
+                                else:
+
+                                    print(event["params"]);
+
+                                
+                                
                     
-            print("Scanned : %.3f GB / %.3f GB  (%.3f%s) Path : %s"%( file.tell() / GIGA_BYTE, os.stat(file_path).st_size / GIGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path) + " | Last Update : " + str(round(datetime.now().timestamp() - os.stat(file_path).st_mtime)) + " seconds ago");
 
             while file.tell() == os.stat(file_path).st_size:
                 
-                print("Scanned : %.3f GB / %.3f GB  (%.3f%s) Path : %s"%( file.tell() / GIGA_BYTE, os.stat(file_path).st_size / GIGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path) + " | Last Update : " + str(round(datetime.now().timestamp() - os.stat(file_path).st_mtime)) + " seconds ago")
+                print(end= "Scanned : %.3f GB / %.3f GB  (%.3f%s) Path : %s | Last Update : %s seconds ago"%(file.tell() / GIGA_BYTE, os.stat(file_path).st_size / GIGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path, datetime.now().timestamp() - os.stat(file_path).st_mtime));
                 
                 if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
-                    print("Finished");
+                    print("Network Events Finished...");
                     return;
                 
                 print("Awating new network events...");
                 await asyncio.sleep(3);
             
+            print(end="Reading | %.3f GB / %.3f GB  (%.3f%s) Path : %s | Last Update : %s seconds ago"%(file.tell() / GIGA_BYTE, os.stat(file_path).st_size / GIGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path, datetime.now().timestamp() - os.stat(file_path).st_mtime));
+
             file.seek(file.tell() - len(lines[-1]));
             lines = file.read(BATCH_SIZE).split(",\n");
