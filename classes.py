@@ -1,6 +1,6 @@
 from typing import Any;
 
-DEFAUT_CACHE_DURATION = 3600000;
+DEFAUT_CACHE_DURATION = 3600;
 
     
 class Route:
@@ -34,7 +34,7 @@ class Route:
 
         if route == None:   
             route = Route(name = routes[0], top = self, resource = resource, query = query);
-            print("Caching new url : " + route.url, end = "\n");
+            #print("Caching new url : " + route.url, end = "\n");
 
         if len(routes) > 1:
             return route.add(routes[1:], resource, query);
@@ -44,7 +44,7 @@ class Route:
     def find(self, routes) -> Any:
         route = self.find_route(routes[0]);
 
-        if route != None  and len(routes) > 1 :
+        if route != None and len(routes) > 1 :
             return (route.find(routes[1:]));
         
         return (route);
