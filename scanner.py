@@ -4,7 +4,7 @@ import glob
 import json
 import os
 
-from . constants import *
+from .constants import *
 
 
 file_stats = lambda file, file_path : "%.3f MB / %.3f MB  (%.3f%s) Path : %s | Last Update : %s seconds ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path, datetime.now().timestamp() - os.stat(file_path).st_mtime)
@@ -132,7 +132,7 @@ async def read(file_path, Hosts, wait = False) -> None:
 						"source_id" : event["source"]["id"],
 						"sources" : set([event["source"]["id"]]),
 					};
-					
+
 					sources[event["source"]["id"]] = path.methods[event["params"]["method"]];
 					print("%d Starting New Events Sequence %s: %s"%(len(sources), event["type"], path.url));
 
