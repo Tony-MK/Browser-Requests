@@ -4,12 +4,13 @@ import glob
 import time;
 import json;
 import os
+from urllib.parse import non_hierarchical
 
 KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * 3;
+CACHE_DURATION = 3600 * 72;
 
 BATCH_SIZE = MEGA_BYTE * 96;
 
@@ -30,7 +31,7 @@ def get_file_paths(dir_path):
 	file_paths.sort(key = lambda file_path : os.stat(file_path).st_mtime);
 	return file_paths;
 
-async def read(file_path, Hosts):
+async def read(file_path, Hosts, wait = False):
 
 	def decode_event(event):
 
@@ -47,7 +48,6 @@ async def read(file_path, Hosts):
 		event["type"]  = constants["logEventTypesMap"][event["type"]];
 		return event;
 
-		
 	def get_path(event):
 
 		url = event["params"]["url"];
@@ -83,7 +83,7 @@ async def read(file_path, Hosts):
 			constants = json.loads(constants.strip(",\n") + "}")["constants"];
 		except Exception as e:
 			print(constants, e.__str__());
-			raise e
+			return;
 		
 		constants["logEventPhaseMap"] = {constants["logEventPhase"][c] : c  for c in constants["logEventPhase"]};
 
@@ -101,29 +101,42 @@ async def read(file_path, Hosts):
 		running = True;
 
 		while running:
+			
+			if file.tell() == os.stat(file_path).st_size and wait == False:
+				break;
+			
+			else:
 
-			while file.tell() == os.stat(file_path).st_size:
-				print("Scanned : %s"%(file_stats(file, file_path)));
-				await asyncio.sleep(3);
+				while file.tell() == os.stat(file_path).st_size:
+					print("Scanned : %s"%(file_stats(file, file_path)));
+					await asyncio.sleep(3);
 			
 			for event in file.read(BATCH_SIZE).split(",\n"):
-
-				if len(event) < 4:
-					continue;
+				
 
 				try:
+
+					if 'google' in event or 'beacons' in event:
+						continue;
+					
 					
 					event = json.loads(event);
 				except json.decoder.JSONDecodeError as e:
 
 					try:
+
+						if len(event) < 3:
+							continue;
+
 						event = json.loads(event[:-3]);
 						running = False;
 					except json.decoder.JSONDecodeError as e: 
-						print(event[:-3], e);
+						print(event, e);
 						continue;
 				
-				event = decode_event(event)
+				event = decode_event(event);
+				
+				print(event)
 
 				if event["source"]["id"] in sources:
 					pass;
@@ -131,15 +144,13 @@ async def read(file_path, Hosts):
 				elif "source_dependency" in event["params"] and event["params"]["source_dependency"]["id"] in sources:
 					sources[event["source"]["id"]] = sources[event["params"]["source_dependency"]["id"]];
 				
-				elif "url" in event["params"]:
-
-					if get_path(event) == None:
-						return;
-
-				else:
-					
+				elif "url" not in event["params"]:
 					#print("EVENT URL NOT FOUND : ", event["type"], event.keys(), event["params"].keys(), end = "\r");
-					return;
+					continue;
+				
+
+				if get_path(event) == None:
+					continue;
 
 				endpoint = sources[event["source"]["id"]];
 				print(endpoint)
