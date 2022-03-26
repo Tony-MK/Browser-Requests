@@ -1,9 +1,9 @@
 import classes
 
-hosts = [ 
+hosts = [
 
    classes.Host(
-      name = "pinnacle.com", 
+      name = "pinnacle.com",
    ),
 ];
 

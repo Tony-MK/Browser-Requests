@@ -10,7 +10,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 180000;
+CACHE_DURATION = 18000000;
 
 BATCH_SIZE = MEGA_BYTE * 96;
 
@@ -90,13 +90,13 @@ async def read(file_path, Hosts):
                         sources[event["source"]["id"]]["events"].append(event);
 
                         if "bytes" in event["params"]:
-                            sources[event["source"]["id"]]["response"] += event["params"] + "bytes";
+                            sources[event["source"]["id"]]["response"] += event["params"]["bytes"];
                             pass;
 
                         if event["phase"] == "PHASE_END":
-                            print(len(sources), event["type"] + " Ended ", len(sources[event["source"]["id"]].events), path.url);
-                            print(sources[event["source"]["id"]]["response"])
-                            del sources[event["source"]["id"]]                        
+                            #print(len(sources), event["type"] + " Ended ", len(sources[event["source"]["id"]]["events"]));
+                            print("Response", len(sources[event["source"]["id"]]["response"]));
+                            del sources[event["source"]["id"]] 
 
                     elif "source_dependency" in event["params"] and event["params"]["source_dependency"]["id"] in sources:
 
@@ -104,12 +104,12 @@ async def read(file_path, Hosts):
                         sources[event["source"]["id"]]["events"].append(event);
 
                         if "bytes" in event["params"]:
-                            sources[event["source"]["id"]]["response"] += event["params"] + "bytes";
+                            sources[event["source"]["id"]]["response"] += event["params"]["bytes"];
                             pass;
 
                         if event["phase"] == "PHASE_END":
-                            print(len(sources), event["type"] + " Ended ", len(sources[event["source"]["id"]].events), path.url);
-                            print(sources[event["source"]["id"]]["response"]);
+                            #print(len(sources), event["type"] + " Ended ", len(sources[event["source"]["id"]]["events"]));
+                            print("Response", len(sources[event["source"]["id"]]["response"]));
                             del sources[event["source"]["id"]]                        
                         
 
@@ -143,7 +143,7 @@ async def read(file_path, Hosts):
                                 
                                 else:
 
-                                    print(event["params"]);
+                                    print(event["params"].keys());
 
                                 
                                 
@@ -154,11 +154,11 @@ async def read(file_path, Hosts):
                 print(end= "Scanned : %.3f GB / %.3f GB  (%.3f%s) Path : %s | Last Update : %s seconds ago"%(file.tell() / GIGA_BYTE, os.stat(file_path).st_size / GIGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path, datetime.now().timestamp() - os.stat(file_path).st_mtime));
                 
                 if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
-                    print("Network Events Finished...");
+                    print("\tNetwork Events Finished...");
                     return;
                 
-                print("Awating new network events...");
-                await asyncio.sleep(3);
+                print("\tAwating new network events...");
+                await asyncio.sleep(300);
             
             print(end="Reading | %.3f GB / %.3f GB  (%.3f%s) Path : %s | Last Update : %s seconds ago"%(file.tell() / GIGA_BYTE, os.stat(file_path).st_size / GIGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path, datetime.now().timestamp() - os.stat(file_path).st_mtime));
 
