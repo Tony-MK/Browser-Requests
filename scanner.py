@@ -48,32 +48,6 @@ async def read(file_path, Hosts, wait = False):
 		event["type"]  = constants["logEventTypesMap"][event["type"]];
 		return event;
 
-	def get_path(event):
-
-		url = event["params"]["url"];
-
-		scheme, url = url[:url.find("://")], url[url.find("://") + 3:];
-
-		host, path = url[:url.find("/")],  url[url.find("/") + 1:];
-
-		if host in Hosts:
-
-			path = Hosts[host].find(path.split("/"));
-
-			if path != None:
-
-				if "method" in event["params"]:
-
-					path.methods[event["params"]["method"]] = {
-						"response" : "",
-					}
-
-					sources[event["source"]["id"]] = path.methods[event["params"]["method"]];
-					print("%d Starting New Events Sequence %s: %s"%(len(sources), event["type"], path.url));
-					return path;
-
-				elif "original_url" in event["params"]:
-					print("METHOD NOT FOUND - EVENT TYPE ", event["type"], "KEYS : " , ",".join(list(event["params"].keys())));
 
 	with open(file_path, "r") as file:
 
@@ -113,53 +87,98 @@ async def read(file_path, Hosts, wait = False):
 			
 			for event in file.read(BATCH_SIZE).split(",\n"):
 				
-
+				if "params" not in event or 'google' in event or 'beacons' in event:
+					continue;
+				
 				try:
-
-					if 'google' in event or 'beacons' in event:
-						continue;
-					
-					
 					event = json.loads(event);
 				except json.decoder.JSONDecodeError as e:
-
-					try:
-
-						if len(event) < 3:
-							continue;
-
-						event = json.loads(event[:-3]);
-						running = False;
-					except json.decoder.JSONDecodeError as e: 
-						print(event, e);
+					
+					running = False;
+					if len(event) < 3:
 						continue;
+						
+					event = json.loads(event[:-3]);
+					pass;
 				
 				event = decode_event(event);
-				
-				print(event)
 
-				if event["source"]["id"] in sources:
+				if event["source"]['type'] in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
+					continue;
+				
+				elif event["source"]["id"] in sources:
 					pass;
 
 				elif "source_dependency" in event["params"] and event["params"]["source_dependency"]["id"] in sources:
 					sources[event["source"]["id"]] = sources[event["params"]["source_dependency"]["id"]];
-				
-				elif "url" not in event["params"]:
-					#print("EVENT URL NOT FOUND : ", event["type"], event.keys(), event["params"].keys(), end = "\r");
-					continue;
-				
+					sources[event["source"]["id"]]["sources"].add(event["source"]["id"])
+		
+				elif "url" in event["params"] and "method" in event["params"]:
+					
+					url = event["params"]["url"];
 
-				if get_path(event) == None:
+					scheme, url = url[:url.find("://")], url[url.find("://") + 3:];
+
+					host, path = url[:url.find("/")],  url[url.find("/") + 1:];
+
+					if host not in Hosts:
+						continue;
+
+					path = Hosts[host].find(path.split("/"));
+
+					if path == None:
+						#print("NO PATH FOUND : %s"%(url))
+						continue;
+
+					path.methods[event["params"]["method"]] = {
+						"request" :  {"headers" : "", "data" : "" },
+						"response" : { "headers" : "", "data" : "" },
+						"source_id" : event["source"]["id"],
+						"sources" : set([event["source"]["id"]]),
+					}
+					sources[event["source"]["id"]] = path.methods[event["params"]["method"]];
+					print("%d Starting New Events Sequence %s: %s"%(len(sources), event["type"], path.url));
+					pass;
+
+				else:
+					
+					#if event["type"] != "COOKIE_STORE_COOKIE_ADDED":
+						#print(event["source"]["type"], "TYPE NOT FOUND : ", event["type"], event.keys(), event["params"].keys(), end = "\n");
 					continue;
+				
 
 				endpoint = sources[event["source"]["id"]];
-				print(endpoint)
 
-				if "bytes" in event["params"]:
-					endpoint["response"] += event["params"]["bytes"];
-					print("Processed %s (%d) |  Response : %d  (%d) "%(event["type"], len(sources), len(endpoint["response"], event["params"]["bytes_count"])));
+				params = event["params"];
+				
+				if event["type"] == "HTTP2_SESSION_SEND_HEADERS":
+	
+					endpoint["request"]["headers"] = params["headers"];
+				
+				elif event["type"] == "HTTP2_SESSION_RECV_HEADERS":
+	
+					endpoint["response"]["headers"] = params["headers"];
+				
+				elif event["type"] in ["URL_REQUEST_JOB_BYTES_READ", "URL_REQUEST_JOB_FILTERED_BYTES_READ"] :
+
+					endpoint["response"]["bytes"] = params["bytes"];
+					pass;
+
 				else:
-					print("Processed %s (%d) |  Response : %d "%(event["type"], len(sources),  len(endpoint["response"])));
+					
+					if "bytes" in params:
+						print("response", event["type"]);
+						continue;
+					print("NO UNKWOWN EVENT TYPE : ", event["type"], event["params"].keys());
+
+				#if "bytes" in event["params"]:
+
+				#	endpoint["response"]["data"] += params["bytes"];
+				#	print("Processed %s (%d) |  Response : %d  (%d) "%(event["type"], len(sources), len(endpoint["resp"], params["byte_count"])));
+				
+				
+
+				
 
 				if event["phase"] == "PHASE_END":
 					del sources[event["source"]["id"]];
