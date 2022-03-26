@@ -5,7 +5,7 @@ DEFAUT_CACHE_DURATION = 3600;
     
 class Route:
 
-    def __init__(self, name, resource, query = dict(), top = None , cache = DEFAUT_CACHE_DURATION) -> None:
+    def __init__(self, name, resource = None, query = dict(), top = None , cache = DEFAUT_CACHE_DURATION) -> None:
         self.top = top;
         self.name = name;
         self.cache = cache;
@@ -31,15 +31,16 @@ class Route:
     
     def add(self, routes, resource, query) -> object:
         route = self.find_route(routes[0]);
-
-        if route == None:   
-            route = Route(name = routes[0], top = self, resource = resource, query = query);
-            #print("Caching new url : " + route.url, end = "\n");
-
-        if len(routes) > 1:
-            return route.add(routes[1:], resource, query);
         
-        return (route);
+        if len(routes) == 1:
+            return (Route(name = routes[0], top = self, resource = resource, query = query) if route == None else route);
+
+        elif route == None:
+            return (Route(name = routes[0], top = self).add(routes[1:], resource, query));
+
+        return (route.add(routes[1:], resource, query))
+        
+
 
     def find(self, routes) -> Any:
         route = self.find_route(routes[0]);

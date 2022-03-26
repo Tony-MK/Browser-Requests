@@ -1,20 +1,11 @@
+from datetime import datetime
 import asyncio
-from datetime import datetime;
 import glob
-import time;
-import json;
+import json
 import os
-from urllib.parse import non_hierarchical
 
-KILO_BYTE = 2 ** 10;
-MEGA_BYTE = 2 ** 20;
-GIGA_BYTE = 2 ** 30;
+from . constants import *
 
-CACHE_DURATION = 3600 * 72;
-
-BATCH_SIZE = MEGA_BYTE * 96;
-
-TIME_ZONE = 10800 * int(10 ** 3);
 
 file_stats = lambda file, file_path : "%.3f MB / %.3f MB  (%.3f%s) Path : %s | Last Update : %s seconds ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path, datetime.now().timestamp() - os.stat(file_path).st_mtime)
 
@@ -31,58 +22,57 @@ def get_file_paths(dir_path):
 	file_paths.sort(key = lambda file_path : os.stat(file_path).st_mtime);
 	return file_paths;
 
-async def read(file_path, Hosts, wait = False):
+def decode_event(event: dict, constants: dict) -> dict:
 
-	def decode_event(event):
+	if "source_dependency" in event["params"]:
+		event["params"]["source_dependency"]["type"] = constants["logSourceTypeMap"][event["params"]["source_dependency"]["type"]]
 
-		if "params" not in event:
-			event["params"] = dict();
+	event["source"]["start_time"] = constants["timeTickOffset"] + int(event["source"]["start_time"])
+	event["source"]["type"] = constants["logSourceTypeMap"][event["source"]["type"]]
+	event["time"] = constants["timeTickOffset"] + int(event["time"])
+	event["phase"] = constants["logEventPhaseMap"][event["phase"]]
+	event["type"]  = constants["logEventTypesMap"][event["type"]];
+	return event;
 
-		elif "source_dependency" in event["params"]:
-			event["params"]["source_dependency"]["type"] = constants["logSourceTypeMap"][event["params"]["source_dependency"]["type"]]
+async def read(file_path, Hosts, wait = False) -> None:
 
-		event["source"]["start_time"] = constants["timeTickOffset"] + int(event["source"]["start_time"])
-		event["source"]["type"] = constants["logSourceTypeMap"][event["source"]["type"]]
-		event["time"] = constants["timeTickOffset"] + int(event["time"])
-		event["phase"] = constants["logEventPhaseMap"][event["phase"]]
-		event["type"]  = constants["logEventTypesMap"][event["type"]];
-		return event;
-
+	remove = not wait;
 
 	with open(file_path, "r") as file:
 
 		constants = file.readline();
 
 		try:
+
 			constants = json.loads(constants.strip(",\n") + "}")["constants"];
+
+			constants["logEventPhaseMap"] = {constants["logEventPhase"][c] : c  for c in constants["logEventPhase"]};
+
+			constants["logSourceTypeMap"] = {constants["logSourceType"][c] : c  for c in constants["logSourceType"]};
+
+			constants["logEventTypesMap"] = {constants["logEventTypes"][c] : c  for c in constants["logEventTypes"]};
+
+			constants["timeTickOffset"] = int(constants["timeTickOffset"]) - TIME_ZONE;
+			
 		except Exception as e:
 			print(constants, e.__str__());
-			return;
-		
-		constants["logEventPhaseMap"] = {constants["logEventPhase"][c] : c  for c in constants["logEventPhase"]};
+			return
 
-		constants["logSourceTypeMap"] = {constants["logSourceType"][c] : c  for c in constants["logSourceType"]};
-
-		constants["logEventTypesMap"] = {constants["logEventTypes"][c] : c  for c in constants["logEventTypes"]};
-
-		constants["timeTickOffset"] = int(constants["timeTickOffset"]) - TIME_ZONE;
-
+		file.readline()
 		file.readline();
-		file.readline().split("\n")[-1];
 
-		sources = dict();
+		sources = dict()
 
 		running = True;
 
 		while running:
 			
-			if file.tell() == os.stat(file_path).st_size and wait == False:
-				break;
-			
-			else:
-
+			if  file.tell() == os.stat(file_path).st_size:
+				if  wait == False:
+					break;
+				
 				while file.tell() == os.stat(file_path).st_size:
-					print("Scanned : %s"%(file_stats(file, file_path)));
+					print("Waiting : %s"%(file_stats(file, file_path)));
 					await asyncio.sleep(3);
 			
 			for event in file.read(BATCH_SIZE).split(",\n"):
@@ -101,7 +91,7 @@ async def read(file_path, Hosts, wait = False):
 					event = json.loads(event[:-3]);
 					pass;
 				
-				event = decode_event(event);
+				event = decode_event(event, constants);
 
 				if event["source"]['type'] in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
 					continue;
@@ -127,63 +117,73 @@ async def read(file_path, Hosts, wait = False):
 					path = Hosts[host].find(path.split("/"));
 
 					if path == None:
-						#print("NO PATH FOUND : %s"%(url))
 						continue;
+					
+					elif path.resource == None:
+						print(path)
+					
+					remove = False;
 
+					print(path.resource);
+					
 					path.methods[event["params"]["method"]] = {
 						"request" :  {"headers" : "", "data" : "" },
 						"response" : { "headers" : "", "data" : "" },
 						"source_id" : event["source"]["id"],
 						"sources" : set([event["source"]["id"]]),
-					}
+					};
+					
 					sources[event["source"]["id"]] = path.methods[event["params"]["method"]];
 					print("%d Starting New Events Sequence %s: %s"%(len(sources), event["type"], path.url));
-					pass;
 
 				else:
-					
-					#if event["type"] != "COOKIE_STORE_COOKIE_ADDED":
-						#print(event["source"]["type"], "TYPE NOT FOUND : ", event["type"], event.keys(), event["params"].keys(), end = "\n");
+
+					#print(event["source"]["type"], "TYPE NOT FOUND : ", event["type"], event.keys(), event["params"].keys(), end = "\n");
 					continue;
 				
-
+				params = event["params"];
 				endpoint = sources[event["source"]["id"]];
 
-				params = event["params"];
 				
-				if event["type"] == "HTTP2_SESSION_SEND_HEADERS":
+				if event["type"] in ["HTTP2_SESSION_SEND_HEADERS", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
 	
 					endpoint["request"]["headers"] = params["headers"];
 				
-				elif event["type"] == "HTTP2_SESSION_RECV_HEADERS":
+				elif event["type"] in ["HTTP2_SESSION_RECV_HEADERS", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
 	
 					endpoint["response"]["headers"] = params["headers"];
 				
 				elif event["type"] in ["URL_REQUEST_JOB_BYTES_READ", "URL_REQUEST_JOB_FILTERED_BYTES_READ"] :
-
 					endpoint["response"]["bytes"] = params["bytes"];
+
+				elif event["type"] == "CORS_REQUEST":
+					endpoint["request"]["headers"] = params["headers"];
+
+				elif event["type"] in INGNORE_EVENT_TYPES:
 					pass;
-
+				
 				else:
-					
-					if "bytes" in params:
-						print("response", event["type"]);
-						continue;
-					print("NO UNKWOWN EVENT TYPE : ", event["type"], event["params"].keys());
-
-				#if "bytes" in event["params"]:
-
-				#	endpoint["response"]["data"] += params["bytes"];
-				#	print("Processed %s (%d) |  Response : %d  (%d) "%(event["type"], len(sources), len(endpoint["resp"], params["byte_count"])));
+					print("NO UNKWOWN EVENT TYPE : ", event["type"], event);
+					pass;
 				
-				
-
-				
-
 				if event["phase"] == "PHASE_END":
-					del sources[event["source"]["id"]];
+					print(sources[event["source"]["id"]])
+
+					#sources[event["source"]["id"]]["sources"].remove(event["source"]["id"]);
+					
+					#if sources[event["source"]["id"]]["source_id"] == event["source"]["id"] :
+						
+					#del sources[event["source"]["id"]];
 	
-		print("Stopped : %s"%(file_stats(file, file_path)));
+
+		if remove == False or wait == True:
+			print("Stopped : %s"%(file_stats(file, file_path)));
+			return;
+		
+		print("Deleted : %s"%(file_stats(file, file_path)));
+		os.remove(path=file_path);
+		
+		
 
 					
 
