@@ -8,7 +8,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * 7200;
+CACHE_DURATION = 3600 * 24;
 
 BATCH_SIZE = MEGA_BYTE * 256;
 
@@ -64,6 +64,17 @@ def decode_event(event: dict, constants: dict) -> dict:
 	event["type"]  = constants["logEventTypesMap"][event["type"]];
 	return event;
 
+def handle_response(resp):
+
+	resp['headers'][0] = 'version: ' + resp['headers'][0];
+
+	headers = { header.split(': ')[0] : header.split(': ')[1] for header in resp['headers'] };
+
+	print(json.dumps(headers, indent=True));
+	print(resp["data"][:100])
+	pass;
+
+
 async def read(file_path, Hosts, wait = False) -> None:
 
 	remove = not wait;
@@ -95,17 +106,27 @@ async def read(file_path, Hosts, wait = False) -> None:
 
 		running = True;
 
+		current_byte, buff = file.tell(), None;
+
 		while running:
 			
-			if  file.tell() == os.stat(file_path).st_size:
-				if  wait == False:
+			del buff;
+
+			if current_byte == os.stat(file_path).st_size:
+
+				if wait == False:
+					print("Stopped : %s"%(file_stats(file, file_path)));
 					break;
 				
-				while file.tell() == os.stat(file_path).st_size:
+				while current_byte == os.stat(file_path).st_size:
 					print("Waiting : %s"%(file_stats(file, file_path)));
 					await asyncio.sleep(3);
 			
-			for event in file.read(BATCH_SIZE).split(",\n"):
+			file.seek(current_byte, os.SEEK_SET);
+			buff = file.read(BATCH_SIZE);
+			current_byte += len(buff);
+
+			for event in buff.split(",\n"):
 				
 				if "params" not in event or 'google' in event or 'beacons' in event:
 					continue;
@@ -150,21 +171,20 @@ async def read(file_path, Hosts, wait = False) -> None:
 						continue;
 					
 					elif path.resource == None:
-						print(path)
-					
+						continue;
+				
 					remove = False;
-
-					print(path.resource);
 					
 					path.methods[event["params"]["method"]] = {
 						"request" :  {"headers" : "", "data" : "" },
 						"response" : { "headers" : "", "data" : "" },
 						"source_id" : event["source"]["id"],
 						"sources" : set([event["source"]["id"]]),
+						"path" : path,
 					};
 
 					sources[event["source"]["id"]] = path.methods[event["params"]["method"]];
-					print("%d Starting New Events Sequence %s: %s"%(len(sources), event["type"], path.url));
+					#print("%d Starting New Events Sequence %s: %s"%(len(sources), event["type"], path.url));
 
 				else:
 
@@ -174,7 +194,6 @@ async def read(file_path, Hosts, wait = False) -> None:
 				params = event["params"];
 				endpoint = sources[event["source"]["id"]];
 
-				
 				if event["type"] in ["HTTP2_SESSION_SEND_HEADERS", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
 	
 					endpoint["request"]["headers"] = params["headers"];
@@ -184,7 +203,7 @@ async def read(file_path, Hosts, wait = False) -> None:
 					endpoint["response"]["headers"] = params["headers"];
 				
 				elif event["type"] in ["URL_REQUEST_JOB_BYTES_READ", "URL_REQUEST_JOB_FILTERED_BYTES_READ"] :
-					endpoint["response"]["bytes"] = params["bytes"];
+					endpoint["response"]["data"] += params["bytes"];
 
 				elif event["type"] == "CORS_REQUEST":
 					endpoint["request"]["headers"] = params["headers"];
@@ -193,25 +212,33 @@ async def read(file_path, Hosts, wait = False) -> None:
 					pass;
 				
 				else:
-					print("NO UNKWOWN EVENT TYPE : ", event["type"], event);
+					#print("NO UNKWOWN EVENT TYPE : ", event["type"], event);
 					pass;
 				
 				if event["phase"] == "PHASE_END":
-					print(sources[event["source"]["id"]])
+					print(sources[event["source"]["id"]]["path"].resource);
+					print(sources[event["source"]["id"]]["source_id"], sources[event["source"]["id"]]["sources"]);
+					print(len(sources[event["source"]["id"]]["request"]["headers"]), len(sources[event["source"]["id"]]["response"]["headers"]));
+					print(len(sources[event["source"]["id"]]["request"]["data"]), len(sources[event["source"]["id"]]["response"]["data"]), end = "\n\n");
 
+					if  len(sources[event["source"]["id"]]["response"]["headers"]) > 1:
+						handle_response(resp = sources[event["source"]["id"]]["response"])
+					
 					#sources[event["source"]["id"]]["sources"].remove(event["source"]["id"]);
 					
 					#if sources[event["source"]["id"]]["source_id"] == event["source"]["id"] :
 						
 					#del sources[event["source"]["id"]];
-	
-
-		if remove == False or wait == True:
-			print("Stopped : %s"%(file_stats(file, file_path)));
-			return;
 		
-		print("Deleted : %s"%(file_stats(file, file_path)));
-		os.remove(path=file_path);
+	try:
+		
+		if remove == True and wait == False:
+			print("Deleting %s"%( file_path));
+			os.remove(path=file_path);
+	
+	except PermissionError as e:
+		print(e);
+		pass;
 		
 		
 
