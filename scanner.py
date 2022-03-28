@@ -37,7 +37,7 @@ INGNORE_EVENT_TYPES = [
     "HTTP_STREAM_JOB_CONTROLLER_PROXY_SERVER_RESOLVED",
 ];
 
-file_stats = lambda file, file_path : "%.3f MB / %.3f MB  (%.3f%s) Path : %s | Last Update : %s seconds ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path, datetime.now().timestamp() - os.stat(file_path).st_mtime)
+file_stats = lambda file, file_path : "%.3f MB / %.3f MB  (%.3f%s) Path : %s | Last Update : %s seconds ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path.split("\\")[0], datetime.now().timestamp() - os.stat(file_path).st_mtime)
 
 
 def get_file_paths(dir_path):
@@ -233,9 +233,9 @@ async def read(file_path, Hosts, wait = False) -> None:
 	try:
 		
 		if remove == True and wait == False:
-			print("Deleting %s"%( file_path));
+			print("Deleting %s"%(file_path.split("\\")[0]));
 			os.remove(path=file_path);
-	
+			
 	except PermissionError as e:
 		print(e);
 		pass;
