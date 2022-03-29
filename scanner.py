@@ -1,11 +1,9 @@
 import base64
 from datetime import datetime
 import asyncio
-import brotli
 import gzip
 import glob
 import json
-import zlib
 import os
 
 KILO_BYTE = 2 ** 10;
@@ -41,7 +39,7 @@ INGNORE_EVENT_TYPES = [
     "HTTP_STREAM_JOB_CONTROLLER_PROXY_SERVER_RESOLVED",
 ];
 
-file_stats = lambda file, file_path : "%.3f MB / %.3f MB  (%.3f%s) Path : %s | Last Update : %s seconds ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path.split("\\")[0], datetime.now().timestamp() - os.stat(file_path).st_mtime)
+file_stats = lambda file, file_path : "%.3f MB / %.3f MB  (%.3f%s) Path : %s | Last Update : %s seconds ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path.split("\\")[1], datetime.now().timestamp() - os.stat(file_path).st_mtime)
 
 
 def get_file_paths(dir_path):
@@ -58,7 +56,10 @@ def get_file_paths(dir_path):
 
 def decode_event(event: dict, constants: dict) -> dict:
 
-	if "source_dependency" in event["params"]:
+	if "params" not in event:
+		event["params"] = {};
+
+	elif "source_dependency" in event["params"]:
 		event["params"]["source_dependency"]["type"] = constants["logSourceTypeMap"][event["params"]["source_dependency"]["type"]]
 
 	event["source"]["start_time"] = constants["timeTickOffset"] + int(event["source"]["start_time"])
@@ -68,26 +69,36 @@ def decode_event(event: dict, constants: dict) -> dict:
 	event["type"]  = constants["logEventTypesMap"][event["type"]];
 	return event;
 
+
+format_header = lambda header : header.split(": ");
+
+def decode_headers(headers):
+
+	if headers[0].find("HTTP") != -1:
+		headers[0] = "version: " + headers[0];
+
+	return dict(map(format_header, headers));
+
 def handle_url_request(url_req):
 
-	req, resp = url_req["request"], url_req["response"]
+	req, resp, resource = url_req["request"], url_req["response"]
 
-	headers = { header.split(': ')[0] : header.split(': ')[1] for header in req['headers'] };
-	print("\n" + "".join(["-"] * 150))
+	print("\n" + "".join(["-"] * 150) + "\n Resource" + str(url_req["path"].resource));
+
+
 	print("REQUEST - Headers : %d Data : %d bytes"%(len(resp["headers"]), len(resp["data"])));
+	headers = decode_headers(req["headers"]);
 	print(json.dumps(headers, indent=True));
 	print(req["data"][:100]);
 
-	resp['headers'][0] = 'version: ' + resp['headers'][0];
-	headers = { header.split(': ')[0] : header.split(': ')[1] for header in resp['headers'] };
-	print("RESPONSE - Headers : %d Data : %d bytes"%(len(resp["headers"]), len(resp["data"])));
+
+	print("RESPONSE - Charset:%s Headers : %d Data : %d bytes"%(charset, len(resp["headers"]), len(resp["data"])));
+	headers = decode_headers(req["headers"]);
+	charset = headers["content-type"].split("charset=")[-1]
 	print(json.dumps(headers, indent=True));
-
-	data = base64.b64decode(resp["data"]).decode('utf-8', 'ignore')
-
-	data = json.loads(data);
-	print(json.dumps(data, indent = 3))
-	print("\n" + "".join(["-"] * 150))
+	data = base64.b64decode(resp["data"]).decode(charset, 'ignore')
+	
+	print(data if len(data) < 500 else (data[0:100] + "\n" + "".join(["...."] * 25) + "\n" + data[-100:]))
 	pass;
 
 
@@ -96,13 +107,12 @@ async def read(file_path, Hosts, wait = False) -> None:
 	remove = not wait;
 
 	with open(file_path, "r") as file:
-
-
 		constants = file.readline();
+		
 
 		try:
 
-			constants = json.loads(constants.strip(",\n") + "}")["constants"];
+			constants = json.loads(constants.strip(",\n") + "}" )["constants"];
 
 			constants["logEventPhaseMap"] = {constants["logEventPhase"][c] : c  for c in constants["logEventPhase"]};
 
@@ -140,9 +150,7 @@ async def read(file_path, Hosts, wait = False) -> None:
 			current_byte += len(buff);
 
 			for event in buff.split(",\n"):
-				
-				if "params" not in event or 'google' in event or 'beacons' in event:
-					continue;
+		
 				
 				try:
 					event = json.loads(event);
@@ -154,7 +162,7 @@ async def read(file_path, Hosts, wait = False) -> None:
 					
 					try:
 
-						event = json.loads(event[:-3]);
+						event = json.loads(event[:-3], );
 						pass;
 					
 					except json.JSONDecodeError as e:
@@ -186,10 +194,10 @@ async def read(file_path, Hosts, wait = False) -> None:
 
 					path = Hosts[host].find(path.split("/"));
 
+					remove = False;
+
 					if path == None:
 						continue;
-					
-					remove = False;
 									
 					path.methods[event["params"]["method"]] = {
 						"request" :  {"headers" : "", "data" : "" },
@@ -211,11 +219,11 @@ async def read(file_path, Hosts, wait = False) -> None:
 				endpoint = sources[event["source"]["id"]];
 
 				if event["type"] in ["HTTP2_SESSION_SEND_HEADERS"] : # "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
-	
+						
 					endpoint["request"]["headers"] = params["headers"];
 				
 				elif event["type"] in ["HTTP2_SESSION_RECV_HEADERS"] : #"HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
-	
+					
 					endpoint["response"]["headers"] = params["headers"];
 				
 				elif event["type"] in ["URL_REQUEST_JOB_FILTERED_BYTES_READ" ]:
@@ -232,20 +240,21 @@ async def read(file_path, Hosts, wait = False) -> None:
 					pass;
 				
 				if event["phase"] == "PHASE_END":
-					print(sources[event["source"]["id"]]["path"].resource);
-					print(sources[event["source"]["id"]]["source_id"], sources[event["source"]["id"]]["sources"]);
+					
 					handle_url_request(sources[event["source"]["id"]])
 					
-					#sources[event["source"]["id"]]["sources"].remove(event["source"]["id"]);
+					sources[event["source"]["id"]]["sources"].remove(event["source"]["id"]);
 					
-					#if sources[event["source"]["id"]]["source_id"] == event["source"]["id"] :
+					print(sources[event["source"]["id"]]["source_id"], sources[event["source"]["id"]]["sources"], sources[event["source"]["id"]]["path"].resource);
+					
+					if sources[event["source"]["id"]]["source_id"] == event["source"]["id"] :
 						
-					del sources[event["source"]["id"]];
+						del sources[event["source"]["id"]];
 		
 	try:
 		
 		if remove == True and wait == False:
-			print("Deleting %s"%(file_path.split("\\")[0]));
+			print("Deleting %s"%(file_path.split("\\")[1]));
 			#os.remove(path=file_path);
 			
 	except PermissionError as e:
