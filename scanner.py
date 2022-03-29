@@ -1,14 +1,18 @@
+import base64
 from datetime import datetime
 import asyncio
+import brotli
+import gzip
 import glob
 import json
+import zlib
 import os
 
 KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * 24;
+CACHE_DURATION = 3600 * 24 * 30;
 
 BATCH_SIZE = MEGA_BYTE * 256;
 
@@ -64,14 +68,26 @@ def decode_event(event: dict, constants: dict) -> dict:
 	event["type"]  = constants["logEventTypesMap"][event["type"]];
 	return event;
 
-def handle_response(resp):
+def handle_url_request(url_req):
+
+	req, resp = url_req["request"], url_req["response"]
+
+	headers = { header.split(': ')[0] : header.split(': ')[1] for header in req['headers'] };
+	print("\n" + "".join(["-"] * 150))
+	print("REQUEST - Headers : %d Data : %d bytes"%(len(resp["headers"]), len(resp["data"])));
+	print(json.dumps(headers, indent=True));
+	print(req["data"][:100]);
 
 	resp['headers'][0] = 'version: ' + resp['headers'][0];
-
 	headers = { header.split(': ')[0] : header.split(': ')[1] for header in resp['headers'] };
-
+	print("RESPONSE - Headers : %d Data : %d bytes"%(len(resp["headers"]), len(resp["data"])));
 	print(json.dumps(headers, indent=True));
-	print(resp["data"][:100])
+
+	data = base64.b64decode(resp["data"]).decode('utf-8', 'ignore')
+
+	data = json.loads(data);
+	print(json.dumps(data, indent = 3))
+	print("\n" + "".join(["-"] * 150))
 	pass;
 
 
@@ -80,6 +96,7 @@ async def read(file_path, Hosts, wait = False) -> None:
 	remove = not wait;
 
 	with open(file_path, "r") as file:
+
 
 		constants = file.readline();
 
@@ -96,17 +113,13 @@ async def read(file_path, Hosts, wait = False) -> None:
 			constants["timeTickOffset"] = int(constants["timeTickOffset"]) - TIME_ZONE;
 			
 		except Exception as e:
-			print(constants, e.__str__());
+			print("CONSTANTS", constants, e.__str__());
 			return
 
 		file.readline()
 		file.readline();
 
-		sources = dict()
-
-		running = True;
-
-		current_byte, buff = file.tell(), None;
+		current_byte, buff, running, sources = file.tell(), str(), True, dict();
 
 		while running:
 			
@@ -138,9 +151,15 @@ async def read(file_path, Hosts, wait = False) -> None:
 					running = False;
 					if len(event) < 3:
 						continue;
-						
-					event = json.loads(event[:-3]);
-					pass;
+					
+					try:
+
+						event = json.loads(event[:-3]);
+						pass;
+					
+					except json.JSONDecodeError as e:
+						print('Event', event, e)
+						continue;
 				
 				event = decode_event(event, constants);
 
@@ -170,11 +189,8 @@ async def read(file_path, Hosts, wait = False) -> None:
 					if path == None:
 						continue;
 					
-					elif path.resource == None:
-						continue;
-				
 					remove = False;
-					
+									
 					path.methods[event["params"]["method"]] = {
 						"request" :  {"headers" : "", "data" : "" },
 						"response" : { "headers" : "", "data" : "" },
@@ -184,7 +200,7 @@ async def read(file_path, Hosts, wait = False) -> None:
 					};
 
 					sources[event["source"]["id"]] = path.methods[event["params"]["method"]];
-					#print("%d Starting New Events Sequence %s: %s"%(len(sources), event["type"], path.url));
+					print("%d Starting New Events Sequence %s: %s "%(len(sources), event["type"], path.url));
 
 				else:
 
@@ -194,15 +210,15 @@ async def read(file_path, Hosts, wait = False) -> None:
 				params = event["params"];
 				endpoint = sources[event["source"]["id"]];
 
-				if event["type"] in ["HTTP2_SESSION_SEND_HEADERS", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
+				if event["type"] in ["HTTP2_SESSION_SEND_HEADERS"] : # "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
 	
 					endpoint["request"]["headers"] = params["headers"];
 				
-				elif event["type"] in ["HTTP2_SESSION_RECV_HEADERS", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
+				elif event["type"] in ["HTTP2_SESSION_RECV_HEADERS"] : #"HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
 	
 					endpoint["response"]["headers"] = params["headers"];
 				
-				elif event["type"] in ["URL_REQUEST_JOB_BYTES_READ", "URL_REQUEST_JOB_FILTERED_BYTES_READ"] :
+				elif event["type"] in ["URL_REQUEST_JOB_FILTERED_BYTES_READ" ]:
 					endpoint["response"]["data"] += params["bytes"];
 
 				elif event["type"] == "CORS_REQUEST":
@@ -218,23 +234,19 @@ async def read(file_path, Hosts, wait = False) -> None:
 				if event["phase"] == "PHASE_END":
 					print(sources[event["source"]["id"]]["path"].resource);
 					print(sources[event["source"]["id"]]["source_id"], sources[event["source"]["id"]]["sources"]);
-					print(len(sources[event["source"]["id"]]["request"]["headers"]), len(sources[event["source"]["id"]]["response"]["headers"]));
-					print(len(sources[event["source"]["id"]]["request"]["data"]), len(sources[event["source"]["id"]]["response"]["data"]), end = "\n\n");
-
-					if  len(sources[event["source"]["id"]]["response"]["headers"]) > 1:
-						handle_response(resp = sources[event["source"]["id"]]["response"])
+					handle_url_request(sources[event["source"]["id"]])
 					
 					#sources[event["source"]["id"]]["sources"].remove(event["source"]["id"]);
 					
 					#if sources[event["source"]["id"]]["source_id"] == event["source"]["id"] :
 						
-					#del sources[event["source"]["id"]];
+					del sources[event["source"]["id"]];
 		
 	try:
 		
 		if remove == True and wait == False:
 			print("Deleting %s"%(file_path.split("\\")[0]));
-			os.remove(path=file_path);
+			#os.remove(path=file_path);
 			
 	except PermissionError as e:
 		print(e);
