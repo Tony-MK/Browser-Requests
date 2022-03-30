@@ -93,18 +93,18 @@ def handle_url_request(url_req):
 	headers = decode_headers(req["headers"]);
 
 	print(json.dumps(headers, indent=True));
-	#print(req["data"][:100]);
+	print(req["data"][:100]);
 
 	headers = decode_headers(req["headers"]);
 
 	charset = headers["content-type"].split("charset=")[-1]
-	print("RESPONSE - Charset:%s Headers : %d Data : %d bytes"%(charset, len(resp["headers"]), len(resp["data"])));
+	print("RESPONSE - Charset:%s Headers : %d Data : %d bytes"%(charset[0:100], len(resp["headers"]), len(resp["data"])));
 
-	#print(json.dumps(headers, indent=True));
+	print(json.dumps(headers, indent=True));
 
-	#data = base64.b64decode(resp["data"]).decode(charset, 'ignore')
+	data = base64.b64decode(resp["data"]).decode(charset, 'ignore')
 	
-	#print((data if len(data) < 200 else (data[0:100] + "\n" + "".join(["...."] * 25) + "\n" + data[-100:])))
+	print((data if len(data) < 200 else (data[0:100] + "\n" + "".join(["...."] * 25) + "\n" + data[-100:])))
 	pass;
 
 
@@ -255,22 +255,22 @@ async def read(file_path, Hosts, wait = False) -> None:
 					
 					if event["phase"] == "PHASE_END":
 						
-						#handle_url_request(sources[event["source"]["id"]])
+						handle_url_request(sources[event["source"]["id"]])
 												
 						sources[event["source"]["id"]]["sources"].remove(event["source"]["id"]);
 
 						if sources[event["source"]["id"]]["source_id"] == event["source"]["id"] :
 							del sources[event["source"]["id"]];
 		
-		try:
+	try:
+		
+		if remove == True and wait == False:
+			print("DELETING ... %s"%(file_path.split("\\")[-1]));
+			os.remove(path=file_path);
 			
-			if remove == True and wait == False:
-				print("DELETING ... %s"%(file_stats(file = file, file_path=file_path)));
-				#os.remove(path=file_path);
-				
-		except PermissionError as e:
-			print(e);
-			pass;
+	except PermissionError as e:
+		print(e);
+		pass;
 		
 		
 
