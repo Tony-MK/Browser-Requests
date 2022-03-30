@@ -79,33 +79,27 @@ def decode_headers(headers):
 
 	if headers[0].find("HTTP") != -1:
 		headers[0] = "version: " + headers[0];
+	
 
-	return dict(map(format_header, headers));
+	return { header.split(': ')[0] : header.split(': ')[1] for header in headers };
 
 def handle_url_request(url_req):
 
+	if len(url_req["response"]["data"]) == 0:
+		return;
+		
 	req, resp = url_req["request"], url_req["response"]
 
-	#print("\n" + "".join(["-"] * 150) + "\n Resource" + str(url_req["path"].resource));
+	print("\n" + "".join(["-"] * 150) + "\nResource : " + str(url_req["path"].resource));
+	print("REQUEST - Headers : %d Data : %d bytes"%(len(req["headers"]), len(req["data"])));
+	print("RESPONSE - Headers : %d Data : %d bytes"%( len(resp["headers"]), len(resp["data"])));
 
-
-	print("REQUEST - Headers : %d Data : %d bytes"%(len(resp["headers"]), len(resp["data"])));
-	headers = decode_headers(req["headers"]);
-
-	print(json.dumps(headers, indent=True));
-	print(req["data"][:100]);
-
-	headers = decode_headers(req["headers"]);
-
-	charset = headers["content-type"].split("charset=")[-1]
-	print("RESPONSE - Charset:%s Headers : %d Data : %d bytes"%(charset[0:100], len(resp["headers"]), len(resp["data"])));
-
-	print(json.dumps(headers, indent=True));
-
-	data = base64.b64decode(resp["data"]).decode(charset, 'ignore')
+	data = base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')
 	
-	print((data if len(data) < 200 else (data[0:100] + "\n" + "".join(["...."] * 25) + "\n" + data[-100:])))
-	pass;
+	print((data if len(data) < 200 else (data[0:100] + "\n" + "".join(["...."] * 25) + "\n" + data[-100:])));
+
+	if len(data) > 0:
+		print(url_req["path"].endpoints[req["method"]]['decoder'](data));
 
 
 async def read(file_path, Hosts, wait = False) -> None:
@@ -193,6 +187,8 @@ async def read(file_path, Hosts, wait = False) -> None:
 						
 						url = event["params"]["url"];
 
+						method = event["params"]["method"].lower()
+
 						scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:];
 
 						host, path = url[:url.find("/")],  url[url.find("/") + 1:];
@@ -204,25 +200,23 @@ async def read(file_path, Hosts, wait = False) -> None:
 
 						path = Hosts[host].find(path.split("/"));
 
-						if path == None:
+						if path == None :
 							continue;
 
-						elif path.resource == None:
+						elif path.resource == None  or method not in path.endpoints:
 							#print("NO RESOURCE FOUND URL : %s%s"%(scheme, url))
 							continue;
 
-						else:
+						path.methods[event["params"]["method"]] = {
+							"request" :  {"method" : method, "headers" : "", "data" : "" },
+							"response" : { "headers" : "", "data" : "" },
+							"source_id" : event["source"]["id"],
+							"sources" : set([event["source"]["id"]]),
+							"path" : path,
+						};
 
-							path.methods[event["params"]["method"]] = {
-								"request" :  {"headers" : "", "data" : "" },
-								"response" : { "headers" : "", "data" : "" },
-								"source_id" : event["source"]["id"],
-								"sources" : set([event["source"]["id"]]),
-								"path" : path,
-							};
-
-							sources[event["source"]["id"]] = path.methods[event["params"]["method"]];
-							#print("%d) %s - %s%s"%(len(sources), event["type"], scheme, url));
+						sources[event["source"]["id"]] = path.methods[event["params"]["method"]];
+						#print("%d) %s - %s%s"%(len(sources), event["type"], scheme, url));
 
 					else:
 
@@ -253,14 +247,22 @@ async def read(file_path, Hosts, wait = False) -> None:
 						#print("NO UNKWOWN EVENT TYPE : ", event["type"], event);
 						pass;
 					
-					if event["phase"] == "PHASE_END":
+					
 						
-						handle_url_request(sources[event["source"]["id"]])
-												
-						sources[event["source"]["id"]]["sources"].remove(event["source"]["id"]);
+						
+					try:
 
-						if sources[event["source"]["id"]]["source_id"] == event["source"]["id"] :
-							del sources[event["source"]["id"]];
+						if event["phase"] == "PHASE_END":
+
+							handle_url_request(sources[event["source"]["id"]])
+
+							#if sources[event["source"]["id"]]["source_id"] == event["source"]["id"] :
+
+							#del sources[event["source"]["id"]];
+					
+					except KeyError as e:
+						print("Source Id:", e);
+						pass;
 		
 	try:
 		

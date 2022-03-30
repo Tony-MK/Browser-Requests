@@ -14,6 +14,7 @@ class Route:
         self.qurey = query;
         self.routes = list();
         self.methods = dict();
+        self.endpoints = dict();
 
         if top != None:
             self.top.routes.append(self);
