@@ -13,7 +13,6 @@ class Route:
         self.resource = resource;
         self.qurey = query;
         self.routes = list();
-        self.events = list();
         self.methods = dict();
 
         if top != None:
@@ -29,16 +28,16 @@ class Route:
             if route.name == name:
                 return route;
     
-    def add(self, routes, resource, query) -> object:
+    def add(self, routes) -> object:
         route = self.find_route(routes[0]);
         
         if len(routes) == 1:
-            return (Route(name = routes[0], top = self, resource = resource, query = query) if route == None else route);
+            return (Route(name = routes[0], top = self) if route == None else route)
 
         elif route == None:
-            return (Route(name = routes[0], top = self).add(routes[1:], resource, query));
+            return (Route(name = routes[0], top = self).add(routes[1:]))
 
-        return (route.add(routes[1:], resource, query))
+        return (route.add(routes[1:]))
         
 
 
