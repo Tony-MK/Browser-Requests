@@ -18,7 +18,6 @@ BATCH_SIZE = MEGA_BYTE * 256;
 TIME_ZONE = 10800 * int(10 ** 3);
 
 INGNORE_EVENT_TYPES = [
-	"URL_REQUEST_START_JOB",
 	"REQUEST_ALIVE",
 	"CREATED_BY",
     "CHECK_CORS_PREFLIGHT_REQUIRED",
@@ -100,22 +99,22 @@ def handle_url_request(url_req):
 		
 	req, resp = url_req["request"], url_req["response"];
 
-	data = base64.b64decode(resp["data"].encode('UTF-8')).decode('UTF-8', 'ignore');
-
 	print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource));
-	print("REQUEST - url : %s Headers : %d Data : %d bytes"%(url_req["path"], len(req["headers"]), len(req["data"])));
+	print("REQUEST %s - %s Headers : %d Data : %d bytes"%(req["method"],url_req["path"].url, len(req["headers"]), len(req["data"])));
 	print("RESPONSE - Headers : %d Data : %d bytes"%( len(resp["headers"]), len(resp["data"])));
 	
 	if len(resp["data"]) > 0:
 
+		data = base64.b64decode(resp["data"].encode('UTF-8')).decode('UTF-8', 'ignore');
 		print_data(data);
 
 		data = url_req["path"].endpoints[req["method"]]['decoder'](data);
-		print(data);
+		print(json.dumps(data, indent=3));
 
 		getattr(url_req["path"].resource, url_req["path"].endpoints[req["method"]]["handler"])(data);
+		pass;
 	
-	print("SUCCESSFULLY HANDLED URL REQUEST\n" + ''.join(['-'] * 133))
+	print("SUCCESSFULLY HANDLED URL REQUEST" + ''.join(['-'] * 133), end = "\n\n");
 
 def read_constants(file):
 
@@ -233,41 +232,38 @@ async def read(file_path, Hosts, wait = False) -> None:
 
 					sources[source_id] = path.methods[params["method"]];
 					print("%d) %s - %s%s"%(len(sources), event_type, scheme, url));
+					pass;
 
 				else:
 
 					#print(event["source"]["type"], "Source Id Not Found : ", event["type"], event.keys(), event["params"].keys(), end = "\n");
 					continue;
 				
+				req, res = sources[source_id]["request"], sources[source_id]["response"];
 
-				if len(params) > 0 and event_type not in INGNORE_EVENT_TYPES :
+				if event_type in ["HTTP2_SESSION_SEND_HEADERS", "CORS_REQUEST", "URL_REQUEST"] : # "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
 
-					req, res = sources[source_id]["request"], sources[source_id]["response"];
-
-					if event_type in ["HTTP2_SESSION_SEND_HEADERS", "CORS_REQUEST", "URL_REQUEST"] : # "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
-
-						if "headers" in params:
-							req["headers"] = params["headers"];
-						else:
-							print("Headers not found %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
-					
-					elif event_type in ["HTTP2_SESSION_RECV_HEADERS"] : #"HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
-						res["headers"] = params["headers"];
-					
-					elif event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ" ]:
-						res["data"] += params["bytes"];
-
-						if phase == "PHASE_END":
-
-							handle_url_request(sources[source_id]);
-							pass;
-
+					if "headers" in params:
+						req["headers"] = params["headers"];
 					else:
+						print("Headers not found %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
+				
+				elif event_type in ["HTTP2_SESSION_RECV_HEADERS"] : #"HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
+					res["headers"] = params["headers"];
+				
+				elif event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ" ]:
+					res["data"] += params["bytes"];
+
+				else:
+
+					if len(params) > 0 and event_type not in INGNORE_EVENT_TYPES :
 						print("Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 						pass;
 
 
 				if phase == "PHASE_END":
+					
+					handle_url_request(sources[source_id]);
 					
 					try: del sources[source_id];
 
