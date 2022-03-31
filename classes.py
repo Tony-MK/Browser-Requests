@@ -19,12 +19,15 @@ class Route:
         if top != None:
             self.top.routes.append(self);
             self.url = self.top.url  + "/" + self.name;
+            #print("Created Route :" + self.url, len(self.top.routes));
             
     
     def __str__(self):
-        return "\n" + self.url + "\nRoutes : " + str(self.count()) + "\n".join([r.name for r in self.routes]) + "\n";
+        return "\n" + self.url + "\nRoutes : " + str(self.count()) + "\n".join([r.__str__() for r in self.routes]) + "\n";
 
     def find_route(self, name) -> Any:
+        if name == self.name:
+            return
         for route in self.routes:
             if route.name == name:
                 return route;

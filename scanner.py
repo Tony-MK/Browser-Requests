@@ -11,7 +11,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * .5;
+CACHE_DURATION = 3600 * 3;
 
 BATCH_SIZE = MEGA_BYTE * 256;
 
@@ -64,7 +64,7 @@ def get_file_paths(dir_path):
 	for file_num, file_path in  enumerate(glob.glob(dir_path + "/*.json")):
 
 		if os.stat(file_path).st_size == 0:
-			os.remove(file_path);
+			os.delete(file_path);
 
 		elif datetime.now().timestamp() - os.stat(file_path).st_mtime < CACHE_DURATION:
 			file_paths.append(file_path);
@@ -88,10 +88,8 @@ def decode_event(event: dict, constants: dict) -> dict:
 	return event;
 
 
-
-
 def print_data(data, n = 100):
-	n /= 2;
+	n = int(n/2);
 	return data[:n] + "\n" + "".join(["...."] * 25) + "\n" + data[-n:] if len(data) > n else data;
 
 
@@ -105,16 +103,13 @@ def handle_url_request(url_req):
 	
 	if len(resp["data"]) > 0:
 
-		data = base64.b64decode(resp["data"].encode('UTF-8')).decode('UTF-8', 'ignore');
+		data = base64.b64decode(resp["data"]).decode('UTF-8', 'ignore');
 		print_data(data);
 
-		data = url_req["path"].endpoints[req["method"]]['decoder'](data);
-		print(json.dumps(data, indent=3));
-
-		getattr(url_req["path"].resource, url_req["path"].endpoints[req["method"]]["handler"])(data);
-		pass;
+		getattr(url_req["path"].resource, url_req["path"].endpoints[req["method"]]["handler"])(url_req["path"].endpoints[req["method"]]['decoder'](data));
+		print("SUCCESSFULLY HANDLED URL REQUEST" + ''.join(['-'] * 133), end = "\n\n");
 	
-	print("SUCCESSFULLY HANDLED URL REQUEST" + ''.join(['-'] * 133), end = "\n\n");
+	
 
 def read_constants(file):
 
@@ -132,9 +127,9 @@ def read_constants(file):
 
 	return constants;
 
-async def read(file_path, Hosts, wait = False) -> None:
+async def read_log(file_path, profile, wait = False) -> None:
 
-	remove = not wait;
+	delete = not wait;
 
 	with open(file_path, "r") as file:
 		
@@ -194,10 +189,10 @@ async def read(file_path, Hosts, wait = False) -> None:
 				assert len(event) == 0, str(event.keys());
 				del event;
 
-				if source_type in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
-					continue;
+				#if source_type in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
+				#	continue;
 
-				elif source_id in sources:
+				if source_id in sources:
 					pass;
 
 				elif "source_dependency" in params and params["source_dependency"]["id"] in sources:
@@ -212,16 +207,18 @@ async def read(file_path, Hosts, wait = False) -> None:
 
 					scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:];
 
-					host, path = url[:url.find('/')],  url[url.find('/') + 1:];
+					host, _path = url[:url.find('/')],  url[url.find('/') + 1:];
 
-					if host not in Hosts:
+					if host not in profile.Hosts:
 						continue;
 					
-					remove = False;
-					path = Hosts[host].find(path.split("/"));
+					#print(profile.Hosts[host], len(profile.Hosts[host].routes), _path.split("/"));
+
+					delete = False;
+					path = profile.Hosts[host].find(_path.split("/"));
 
 					if path == None :
-						print("NO RESOURCE PATH : %s %s%s"%(params["method"], scheme, url))
+						print("NO RESOURCE PATH : %s %s%s/%s"%(params["method"], scheme, host,_path))
 						continue;
 
 					elif path.resource == None:
@@ -229,8 +226,8 @@ async def read(file_path, Hosts, wait = False) -> None:
 						continue;
 
 					path.methods[params["method"]] = {
-						"request" :  {"method" : method, "headers" : "", "data" : "" },
-						"response" : { "headers" : "", "data" : "" },
+						"request" :  {"method" : method, "headers" : "", "data" : "" , "encoded" : ""},
+						"response" : { "headers" : "", "data" : "", "encoded" : "" },
 						"source_id" : source_id,
 						"sources" : set([source_id]),
 						"path" : path,
@@ -247,18 +244,22 @@ async def read(file_path, Hosts, wait = False) -> None:
 				
 				req, res = sources[source_id]["request"], sources[source_id]["response"];
 
-				if event_type in ["HTTP2_SESSION_SEND_HEADERS", "CORS_REQUEST", "URL_REQUEST"] : # "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
+				if event_type in ["HTTP2_SESSION_SEND_HEADERS", "CORS_REQUEST", "URL_REQUEST_START_JOB"] : # "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
 
 					if "headers" in params:
 						req["headers"] = params["headers"];
 					else:
 						print("Headers not found %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 				
-				elif event_type in ["HTTP2_SESSION_RECV_HEADERS"] : #"HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
+				elif event_type in ["HTTP2_SESSION_RECV_HEADERS", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
 					res["headers"] = params["headers"];
 				
-				elif event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ" ]:
+				elif event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ"]:
 					res["data"] += params["bytes"];
+				
+				elif event_type in ["URL_REQUEST_JOB_BYTES_READ"]:
+					res["encoded"] +=  params["bytes"];
+					pass;
 
 				elif len(params) > 0 or event_type not in INGNORE_EVENT_TYPES :
 						print("Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
@@ -268,16 +269,12 @@ async def read(file_path, Hosts, wait = False) -> None:
 				if phase == "PHASE_END":
 					
 					handle_url_request(sources[source_id]);
-					
-					try: del sources[source_id];
-
-					except KeyError as e: print("Source Id:", e);
 		
 	try:
 		
-		if remove == True and wait == False:
+		if delete == True and wait == False:
 			print("DELETING ... %s"%(file_path.split("\\")[-1]));
-			#os.remove(path=file_path);
+			#os.delete(path=file_path);
 			
 	except PermissionError as e:
 		print(e);
