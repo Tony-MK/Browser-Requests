@@ -11,7 +11,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * 3;
+CACHE_DURATION = 3600 * .5;
 
 BATCH_SIZE = MEGA_BYTE * 256;
 
@@ -41,7 +41,7 @@ INGNORE_EVENT_TYPES = [
     "HTTP_STREAM_JOB_CONTROLLER_PROXY_SERVER_RESOLVED",
 ];
 
-file_stats = lambda file, file_path : "%.3f MB / %.3f MB  (%.3f%) Path : %s | Last Update : %.3f seconds ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path.split("\\")[1], datetime.now().timestamp() - os.stat(file_path).st_mtime)
+file_stats = lambda file, file_path, nth_byte : "%.3f MB / %.3f MB  (%.3f%s) Path : %s | Last Update : %.3f seconds ago"%(nth_byte / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, nth_byte / os.stat(file_path).st_size * 100 , "%", file_path.split("\\")[1], datetime.now().timestamp() - os.stat(file_path).st_mtime)
 
 
 def decode_headers(headers):
@@ -142,43 +142,48 @@ async def read(file_path, Hosts, wait = False) -> None:
 
 		file.readline();file.readline();
 		
-
 		nth_byte, running, sources = file.tell(), True, dict();
 
 		while running:
-			
+			p = 0;
 			if nth_byte == os.stat(file_path).st_size:
 
 				if wait == False:
-					print("Stopped : %s"%(file_stats(file, file_path)));
+					print("Stopped : %s"%(file_stats(file, file_path, nth_byte)));
 					break;
 				
 				while nth_byte == os.stat(file_path).st_size:
-					print("Waiting : %s"%(file_stats(file, file_path)));
+					p += 1;
 					await asyncio.sleep(.3);
+					if p%33 == 0:
+						print("Waiting : %s"%(file_stats(file, file_path, nth_byte)));
+					
 			
 			file.seek(nth_byte, os.SEEK_SET);
 			buff = file.read(BATCH_SIZE);
 			nth_byte += len(buff);
 
 			for event in buff.split(",\n"):
-	
+				
+				if event == "":
+					if wait == False:
+						running = False;
+					continue;
+
 				try:
 					event = json.loads(event);
+					running = True;
 				except json.decoder.JSONDecodeError as e:
 					
-					running = False;
-					if len(event) < 3:
-						continue;
-					
 					try:
+
 						event = json.loads(event[:-3]);
-						pass;
+						running = True;
 					
 					except json.JSONDecodeError as e:
-						print('Event', event[:200], e)
+						print('Event', event[:200], e);
 						continue;
-				
+
 				event = decode_event(event, constants);
 				
 				source_id, source_type = event["source"]["id"], event["source"]["type"]; del event["source"];
@@ -187,11 +192,12 @@ async def read(file_path, Hosts, wait = False) -> None:
 				phase = event["phase"]; del event["phase"];
 				_ = event["time"]; del event["time"];
 				assert len(event) == 0, str(event.keys());
+				del event;
 
 				if source_type in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
 					continue;
 
-				if source_id in sources:
+				elif source_id in sources:
 					pass;
 
 				elif "source_dependency" in params and params["source_dependency"]["id"] in sources:
@@ -206,20 +212,20 @@ async def read(file_path, Hosts, wait = False) -> None:
 
 					scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:];
 
-					host, path = url[:url.find("/")],  url[url.find("/") + 1:];
+					host, path = url[:url.find('/')],  url[url.find('/') + 1:];
 
 					if host not in Hosts:
 						continue;
 					
 					remove = False;
-
 					path = Hosts[host].find(path.split("/"));
 
 					if path == None :
+						print("NO RESOURCE PATH : %s %s%s"%(params["method"], scheme, url))
 						continue;
 
 					elif path.resource == None:
-						#print("NO RESOURCE FOUND URL : %s%s"%(scheme, url))
+						print("NO RESOURCE FOUND URL : %s %s%s"%(params["method"], scheme, url))
 						continue;
 
 					path.methods[params["method"]] = {
@@ -231,7 +237,7 @@ async def read(file_path, Hosts, wait = False) -> None:
 					};
 
 					sources[source_id] = path.methods[params["method"]];
-					print("%d) %s - %s%s"%(len(sources), event_type, scheme, url));
+					print("%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
 					pass;
 
 				else:
@@ -254,9 +260,7 @@ async def read(file_path, Hosts, wait = False) -> None:
 				elif event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ" ]:
 					res["data"] += params["bytes"];
 
-				else:
-
-					if len(params) > 0 and event_type not in INGNORE_EVENT_TYPES :
+				elif len(params) > 0 or event_type not in INGNORE_EVENT_TYPES :
 						print("Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 						pass;
 
