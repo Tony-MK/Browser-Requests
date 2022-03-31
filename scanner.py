@@ -1,3 +1,4 @@
+from asyncio import constants
 import base64
 from datetime import datetime
 import asyncio
@@ -17,6 +18,8 @@ BATCH_SIZE = MEGA_BYTE * 256;
 TIME_ZONE = 10800 * int(10 ** 3);
 
 INGNORE_EVENT_TYPES = [
+	"URL_REQUEST_START_JOB",
+	"REQUEST_ALIVE",
 	"CREATED_BY",
     "CHECK_CORS_PREFLIGHT_REQUIRED",
     "CHECK_CORS_PREFLIGHT_CACHE",
@@ -39,7 +42,20 @@ INGNORE_EVENT_TYPES = [
     "HTTP_STREAM_JOB_CONTROLLER_PROXY_SERVER_RESOLVED",
 ];
 
-file_stats = lambda file, file_path : "%.3f MB / %.3f MB  (%.3f%s) Path : %s | Last Update : %s seconds ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path.split("\\")[1], datetime.now().timestamp() - os.stat(file_path).st_mtime)
+file_stats = lambda file, file_path : "%.3f MB / %.3f MB  (%.3f%) Path : %s | Last Update : %.3f seconds ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file_path.split("\\")[1], datetime.now().timestamp() - os.stat(file_path).st_mtime)
+
+
+def decode_headers(headers):
+
+	if len(headers) == 1:
+		headers = headers[0];
+		pass;
+
+	if headers[0].find("HTTP") != -1:
+		headers[0] = "version: " + headers[0];
+	
+	return { header.split(': ')[0] : header.split(': ')[1] for header in headers };
+
 
 
 def get_file_paths(dir_path):
@@ -73,34 +89,49 @@ def decode_event(event: dict, constants: dict) -> dict:
 	return event;
 
 
-format_header = lambda header : header.split(": ");
 
-def decode_headers(headers):
 
-	if headers[0].find("HTTP") != -1:
-		headers[0] = "version: " + headers[0];
-	
+def print_data(data, n = 100):
+	n /= 2;
+	return data[:n] + "\n" + "".join(["...."] * 25) + "\n" + data[-n:] if len(data) > n else data;
 
-	return { header.split(': ')[0] : header.split(': ')[1] for header in headers };
 
 def handle_url_request(url_req):
-
-	if len(url_req["response"]["data"]) == 0:
-		return;
 		
-	req, resp = url_req["request"], url_req["response"]
+	req, resp = url_req["request"], url_req["response"];
 
-	print("\n" + "".join(["-"] * 150) + "\nResource : " + str(url_req["path"].resource));
-	print("REQUEST - Headers : %d Data : %d bytes"%(len(req["headers"]), len(req["data"])));
+	data = base64.b64decode(resp["data"].encode('UTF-8')).decode('UTF-8', 'ignore');
+
+	print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource));
+	print("REQUEST - url : %s Headers : %d Data : %d bytes"%(url_req["path"], len(req["headers"]), len(req["data"])));
 	print("RESPONSE - Headers : %d Data : %d bytes"%( len(resp["headers"]), len(resp["data"])));
-
-	data = base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')
 	
-	print((data if len(data) < 200 else (data[0:100] + "\n" + "".join(["...."] * 25) + "\n" + data[-100:])));
+	if len(resp["data"]) > 0:
 
-	if len(data) > 0:
-		print(url_req["path"].endpoints[req["method"]]['decoder'](data));
+		print_data(data);
 
+		data = url_req["path"].endpoints[req["method"]]['decoder'](data);
+		print(data);
+
+		getattr(url_req["path"].resource, url_req["path"].endpoints[req["method"]]["handler"])(data);
+	
+	print("SUCCESSFULLY HANDLED URL REQUEST\n" + ''.join(['-'] * 133))
+
+def read_constants(file):
+
+	constants = file.readline();
+
+	constants = json.loads(constants.strip(",\n") + "}" )["constants"];
+
+	constants["logEventPhaseMap"] = {constants["logEventPhase"][c] : c  for c in constants["logEventPhase"]};
+
+	constants["logSourceTypeMap"] = {constants["logSourceType"][c] : c  for c in constants["logSourceType"]};
+
+	constants["logEventTypesMap"] = {constants["logEventTypes"][c] : c  for c in constants["logEventTypes"]};
+
+	constants["timeTickOffset"] = int(constants["timeTickOffset"]) - TIME_ZONE;
+
+	return constants;
 
 async def read(file_path, Hosts, wait = False) -> None:
 
@@ -108,174 +139,148 @@ async def read(file_path, Hosts, wait = False) -> None:
 
 	with open(file_path, "r") as file:
 		
-		try:
+		constants = read_constants(file);
 
-			constants = file.readline();
-
-			constants = json.loads(constants.strip(",\n") + "}" )["constants"];
-
-			constants["logEventPhaseMap"] = {constants["logEventPhase"][c] : c  for c in constants["logEventPhase"]};
-
-			constants["logSourceTypeMap"] = {constants["logSourceType"][c] : c  for c in constants["logSourceType"]};
-
-			constants["logEventTypesMap"] = {constants["logEventTypes"][c] : c  for c in constants["logEventTypes"]};
-
-			constants["timeTickOffset"] = int(constants["timeTickOffset"]) - TIME_ZONE;
-			
-		except Exception as e:
-			print("CONSTANTS : ", constants[0:200], e.__str__());
-			return;
+		file.readline();file.readline();
 		
-		else:
 
-			file.readline()
-			file.readline();
+		nth_byte, running, sources = file.tell(), True, dict();
 
-			current_byte, buff, running, sources = file.tell(), str(), True, dict();
-
-			while running:
-				
-				del buff;
-
-				if current_byte == os.stat(file_path).st_size:
-
-					if wait == False:
-						print("Stopped : %s"%(file_stats(file, file_path)));
-						break;
-					
-					while current_byte == os.stat(file_path).st_size:
-						print("Waiting : %s"%(file_stats(file, file_path)));
-						await asyncio.sleep(.3);
-				
-				file.seek(current_byte, os.SEEK_SET);
-				buff = file.read(BATCH_SIZE);
-				current_byte += len(buff);
-
-				for event in buff.split(",\n"):
+		while running:
 			
+			if nth_byte == os.stat(file_path).st_size:
+
+				if wait == False:
+					print("Stopped : %s"%(file_stats(file, file_path)));
+					break;
+				
+				while nth_byte == os.stat(file_path).st_size:
+					print("Waiting : %s"%(file_stats(file, file_path)));
+					await asyncio.sleep(.3);
+			
+			file.seek(nth_byte, os.SEEK_SET);
+			buff = file.read(BATCH_SIZE);
+			nth_byte += len(buff);
+
+			for event in buff.split(",\n"):
+	
+				try:
+					event = json.loads(event);
+				except json.decoder.JSONDecodeError as e:
+					
+					running = False;
+					if len(event) < 3:
+						continue;
 					
 					try:
-						event = json.loads(event);
-					except json.decoder.JSONDecodeError as e:
-						
-						running = False;
-						if len(event) < 3:
-							continue;
-						
-						try:
+						event = json.loads(event[:-3]);
+						pass;
+					
+					except json.JSONDecodeError as e:
+						print('Event', event[:200], e)
+						continue;
+				
+				event = decode_event(event, constants);
+				
+				source_id, source_type = event["source"]["id"], event["source"]["type"]; del event["source"];
+				event_type = event["type"]; del event["type"];
+				params = event["params"]; del event["params"];
+				phase = event["phase"]; del event["phase"];
+				_ = event["time"]; del event["time"];
+				assert len(event) == 0, str(event.keys());
 
-							event = json.loads(event[:-3], );
+				if source_type in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
+					continue;
+
+				if source_id in sources:
+					pass;
+
+				elif "source_dependency" in params and params["source_dependency"]["id"] in sources:
+					sources[source_id] = sources[params["source_dependency"]["id"]];
+					sources[source_id]["sources"].add(source_id)
+		
+				elif "url" in params and "method" in params:
+					
+					url = params["url"];
+
+					method = params["method"].lower()
+
+					scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:];
+
+					host, path = url[:url.find("/")],  url[url.find("/") + 1:];
+
+					if host not in Hosts:
+						continue;
+					
+					remove = False;
+
+					path = Hosts[host].find(path.split("/"));
+
+					if path == None :
+						continue;
+
+					elif path.resource == None:
+						#print("NO RESOURCE FOUND URL : %s%s"%(scheme, url))
+						continue;
+
+					path.methods[params["method"]] = {
+						"request" :  {"method" : method, "headers" : "", "data" : "" },
+						"response" : { "headers" : "", "data" : "" },
+						"source_id" : source_id,
+						"sources" : set([source_id]),
+						"path" : path,
+					};
+
+					sources[source_id] = path.methods[params["method"]];
+					print("%d) %s - %s%s"%(len(sources), event_type, scheme, url));
+
+				else:
+
+					#print(event["source"]["type"], "Source Id Not Found : ", event["type"], event.keys(), event["params"].keys(), end = "\n");
+					continue;
+				
+
+				if len(params) > 0 and event_type not in INGNORE_EVENT_TYPES :
+
+					req, res = sources[source_id]["request"], sources[source_id]["response"];
+
+					if event_type in ["HTTP2_SESSION_SEND_HEADERS", "CORS_REQUEST", "URL_REQUEST"] : # "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
+
+						if "headers" in params:
+							req["headers"] = params["headers"];
+						else:
+							print("Headers not found %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
+					
+					elif event_type in ["HTTP2_SESSION_RECV_HEADERS"] : #"HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
+						res["headers"] = params["headers"];
+					
+					elif event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ" ]:
+						res["data"] += params["bytes"];
+
+						if phase == "PHASE_END":
+
+							handle_url_request(sources[source_id]);
 							pass;
-						
-						except json.JSONDecodeError as e:
-							print('Event', event[:200], e)
-							continue;
-					
-					event = decode_event(event, constants);
-
-					if event["source"]['type'] in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
-						continue;
-					
-					elif event["source"]["id"] in sources:
-						pass;
-
-					elif "source_dependency" in event["params"] and event["params"]["source_dependency"]["id"] in sources:
-						sources[event["source"]["id"]] = sources[event["params"]["source_dependency"]["id"]];
-						sources[event["source"]["id"]]["sources"].add(event["source"]["id"])
-			
-					elif "url" in event["params"] and "method" in event["params"]:
-						
-						url = event["params"]["url"];
-
-						method = event["params"]["method"].lower()
-
-						scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:];
-
-						host, path = url[:url.find("/")],  url[url.find("/") + 1:];
-
-						if host not in Hosts:
-							continue;
-						
-						remove = False;
-
-						path = Hosts[host].find(path.split("/"));
-
-						if path == None :
-							continue;
-
-						elif path.resource == None  or method not in path.endpoints:
-							#print("NO RESOURCE FOUND URL : %s%s"%(scheme, url))
-							continue;
-
-						path.methods[event["params"]["method"]] = {
-							"request" :  {"method" : method, "headers" : "", "data" : "" },
-							"response" : { "headers" : "", "data" : "" },
-							"source_id" : event["source"]["id"],
-							"sources" : set([event["source"]["id"]]),
-							"path" : path,
-						};
-
-						sources[event["source"]["id"]] = path.methods[event["params"]["method"]];
-						#print("%d) %s - %s%s"%(len(sources), event["type"], scheme, url));
 
 					else:
-
-						#print(event["source"]["type"], "TYPE NOT FOUND : ", event["type"], event.keys(), event["params"].keys(), end = "\n");
-						continue;
-					
-					params = event["params"];
-					endpoint = sources[event["source"]["id"]];
-
-					if event["type"] in ["HTTP2_SESSION_SEND_HEADERS"] : # "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
-							
-						endpoint["request"]["headers"] = params["headers"];
-					
-					elif event["type"] in ["HTTP2_SESSION_RECV_HEADERS"] : #"HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
-						
-						endpoint["response"]["headers"] = params["headers"];
-					
-					elif event["type"] in ["URL_REQUEST_JOB_FILTERED_BYTES_READ" ]:
-						endpoint["response"]["data"] += params["bytes"];
-
-					elif event["type"] == "CORS_REQUEST":
-						endpoint["request"]["headers"] = params["headers"];
-
-					elif event["type"] in INGNORE_EVENT_TYPES:
+						print("Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 						pass;
-					
-					else:
-						#print("NO UNKWOWN EVENT TYPE : ", event["type"], event);
-						pass;
-					
-					
-						
-						
-					try:
 
-						if event["phase"] == "PHASE_END":
 
-							handle_url_request(sources[event["source"]["id"]])
-
-							#if sources[event["source"]["id"]]["source_id"] == event["source"]["id"] :
-
-							#del sources[event["source"]["id"]];
+				if phase == "PHASE_END":
 					
-					except KeyError as e:
-						print("Source Id:", e);
-						pass;
+					try: del sources[source_id];
+
+					except KeyError as e: print("Source Id:", e);
 		
 	try:
 		
 		if remove == True and wait == False:
 			print("DELETING ... %s"%(file_path.split("\\")[-1]));
-			os.remove(path=file_path);
+			#os.remove(path=file_path);
 			
 	except PermissionError as e:
 		print(e);
 		pass;
 		
-		
-
-					
-
 				
