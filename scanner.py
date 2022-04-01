@@ -106,8 +106,13 @@ def handle_url_request(url_req):
 		data = base64.b64decode(resp["data"]).decode('UTF-8', 'ignore');
 		print_data(data);
 
-		getattr(url_req["path"].resource, url_req["path"].endpoints[req["method"]]["handler"])(url_req["path"].endpoints[req["method"]]['decoder'](data));
-		print("SUCCESSFULLY HANDLED URL REQUEST" + ''.join(['-'] * 133), end = "\n\n");
+		try:
+			data = url_req["path"].endpoints[req["method"]]['decoder'](data)
+			getattr(url_req["path"].resource, url_req["path"].endpoints[req["method"]]["handler"])(data);
+			print("SUCCESSFULLY HANDLED URL REQUEST" + ''.join(['-'] * 133), end = "\n\n");
+
+		except json.JSONDecodeError as e:
+			print("FAILED TO HANDL URL REQUEST %s"%(e) + ''.join(['-'] * 133), end = "\n\n");
 	
 	
 
