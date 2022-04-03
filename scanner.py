@@ -11,7 +11,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * 24;
+CACHE_DURATION = 3600 * .5;
 
 BATCH_SIZE = MEGA_BYTE * 64;
 
@@ -102,6 +102,9 @@ def handle_url_request(url_req):
 	print("REQUEST %s - %s Headers : %d Data : %d bytes"%(req["method"],url_req["path"].url, len(req["headers"]), len(req["data"])));
 	print("RESPONSE - Headers : %d Data : %d bytes"%( len(resp["headers"]), len(resp["data"])));
 	
+	if len(resp["data"])  == 0:
+		return;
+		
 	data = base64.b64decode(resp["data"]).decode('UTF-8', 'ignore');
 	print_data(data);
 
@@ -264,9 +267,10 @@ async def read_log(file_path, profile) -> None:
 				
 				elif event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ"]:
 					res["data"] += params["bytes"];
-					handle_url_request(sources[source_id]);
+					
 
 				elif event_type in ["HTTP2_SESSION_RECV_DATA"]:
+					print("%s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 					print(params);
 
 				elif event_type in ["URL_REQUEST_JOB_BYTES_READ"]:
@@ -277,7 +281,7 @@ async def read_log(file_path, profile) -> None:
 			
 
 				if phase == "PHASE_END" :
-					del sources[source_id]
+					handle_url_request(sources[source_id]);
 			
 			del buff;
 			pass;
