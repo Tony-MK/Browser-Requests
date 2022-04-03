@@ -13,7 +13,7 @@ GIGA_BYTE = 2 ** 30;
 
 CACHE_DURATION = 3600 * 24;
 
-BATCH_SIZE = MEGA_BYTE * 256;
+BATCH_SIZE = MEGA_BYTE * 64;
 
 TIME_ZONE = 10800 * int(10 ** 3);
 
@@ -27,6 +27,7 @@ INGNORE_EVENT_TYPES = [
     "CORS_PREFLIGHT_RESULT",
     "CORS_PREFLIGHT_CACHED_RESULT",
     "DELEGATE_INFO",
+	"NETWORK_DELEGATE_BEFORE_START_TRANSACTION",
     "HTTP_STREAM_JOB_BOUND_TO_REQUEST",
     "HTTP2_SESSION_UPDATE_RECV_WINDOW",
     "HTTP2_STREAM_UPDATE_RECV_WINDOW",
@@ -101,18 +102,19 @@ def handle_url_request(url_req):
 	print("REQUEST %s - %s Headers : %d Data : %d bytes"%(req["method"],url_req["path"].url, len(req["headers"]), len(req["data"])));
 	print("RESPONSE - Headers : %d Data : %d bytes"%( len(resp["headers"]), len(resp["data"])));
 	
-	if len(resp["data"]) > 0:
+	data = base64.b64decode(resp["data"]).decode('UTF-8', 'ignore');
+	print_data(data);
 
-		data = base64.b64decode(resp["data"]).decode('UTF-8', 'ignore');
-		print_data(data);
+	try:
 
-		try:
-			data = url_req["path"].endpoints[req["method"]]['decoder'](data)
-			getattr(url_req["path"].resource, url_req["path"].endpoints[req["method"]]["handler"])(data);
-			print("SUCCESSFULLY HANDLED URL REQUEST" + ''.join(['-'] * 133), end = "\n\n");
-
-		except json.JSONDecodeError as e:
-			print("FAILED TO HANDL URL REQUEST %s"%(e) + ''.join(['-'] * 133), end = "\n\n");
+		handler = getattr(url_req["path"].resource, url_req["path"].endpoints[req["method"]]["handler"]);
+		print('HANDLING URL REQUEST....')
+		handler(url_req["path"].endpoints[req["method"]]['decoder'](data));
+		print("URL REQUEST HANDLE SUCCEDED " + ''.join(['-'] * 133), end = "\n\n");
+		pass;
+		
+	except json.JSONDecodeError as e:
+		print("URL REQUEST HANDLE FAILED %s"%(e) + ''.join(['-'] * 133), end = "\n\n");
 	
 	
 
@@ -213,7 +215,7 @@ async def read_log(file_path, profile) -> None:
 
 					scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:];
 
-					host, _path = url[:url.find('/')],  url[url.find('/') + 1:];
+					host, _path = url[:url.find('/')],  url[url.find('/') + 1:].split("?")[0];
 
 					if host not in profile.Hosts:
 						continue;
@@ -262,23 +264,27 @@ async def read_log(file_path, profile) -> None:
 				
 				elif event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ"]:
 					res["data"] += params["bytes"];
-				
+					handle_url_request(sources[source_id]);
+
+				elif event_type in ["HTTP2_SESSION_RECV_DATA"]:
+					print(params);
+
 				elif event_type in ["URL_REQUEST_JOB_BYTES_READ"]:
 					res["encoded"] +=  params["bytes"];
-					pass;
-
-				elif len(params) > 0 or event_type not in INGNORE_EVENT_TYPES :
-						print("Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
-						pass;
-
-
-				if phase == "PHASE_END":
 					
-					handle_url_request(sources[source_id]);
+				elif len(params) > 0 and event_type not in INGNORE_EVENT_TYPES :
+						print("Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
+			
+
+				if phase == "PHASE_END" :
+					del sources[source_id]
+			
+			del buff;
+			pass;
 		
 	try:
 		
-		if delete == True and wait == False:
+		if delete == True:
 			print("DELETING ... %s"%(file_path.split("\\")[-1]));
 			#os.delete(path=file_path);
 			
