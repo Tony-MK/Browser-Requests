@@ -11,7 +11,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * 3;
+CACHE_DURATION = 3600 * 24;
 
 BATCH_SIZE = MEGA_BYTE * 256;
 
@@ -132,15 +132,16 @@ def read_constants(file):
 
 	return constants;
 
-async def read_log(file_path, profile, wait = False) -> None:
-
-	delete = not wait;
+async def read_log(file_path, profile) -> None:
+	
+	delete = False;
 
 	with open(file_path, "r") as file:
 		
 		constants = read_constants(file);
 
-		file.readline();file.readline();
+		file.readline();
+		file.readline();
 		
 		nth_byte, running, sources = file.tell(), True, dict();
 
@@ -148,7 +149,7 @@ async def read_log(file_path, profile, wait = False) -> None:
 			p = 0;
 			if nth_byte == os.stat(file_path).st_size:
 
-				if wait == False:
+				if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
 					print("Stopped : %s"%(file_stats(file, file_path, nth_byte)));
 					break;
 				
@@ -159,6 +160,7 @@ async def read_log(file_path, profile, wait = False) -> None:
 						print("Waiting : %s"%(file_stats(file, file_path, nth_byte)));
 					
 			
+			print("Reading : %s "%(file_stats(file, file_path, nth_byte)));
 			file.seek(nth_byte, os.SEEK_SET);
 			buff = file.read(BATCH_SIZE);
 			nth_byte += len(buff);
@@ -166,7 +168,7 @@ async def read_log(file_path, profile, wait = False) -> None:
 			for event in buff.split(",\n"):
 				
 				if event == "":
-					if wait == False:
+					if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
 						running = False;
 					continue;
 
@@ -179,7 +181,6 @@ async def read_log(file_path, profile, wait = False) -> None:
 
 						event = json.loads(event[:-3]);
 						running = True;
-					
 					except json.JSONDecodeError as e:
 						print('Event', event[:200], e);
 						continue;
@@ -194,10 +195,10 @@ async def read_log(file_path, profile, wait = False) -> None:
 				assert len(event) == 0, str(event.keys());
 				del event;
 
-				#if source_type in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
-				#	continue;
+				if source_type in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
+					continue;
 
-				if source_id in sources:
+				elif source_id in sources:
 					pass;
 
 				elif "source_dependency" in params and params["source_dependency"]["id"] in sources:
