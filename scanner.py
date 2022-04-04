@@ -1,5 +1,6 @@
 from asyncio import constants
 import base64
+from cgi import parse_multipart
 from datetime import datetime
 import asyncio
 import gzip
@@ -11,7 +12,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * 3;
+CACHE_DURATION = 3600 * 48;
 
 BATCH_SIZE = MEGA_BYTE * 64;
 
@@ -100,7 +101,7 @@ def handle_url_request(url_req):
 
 	print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource));
 	print("REQUEST %s - %s Headers : %d Data : %d bytes"%(req["method"],url_req["path"].url, len(req["headers"]), len(req["data"])));
-	print("RESPONSE - Headers : %d Data : %d bytes"%( len(resp["headers"]), len(resp["data"])));
+	print("RESPONSE - Headers : %d Data : %d bytes Encoded: %d bytes"%( len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
 	
 	if len(resp["data"])  == 0:
 		return;
@@ -236,6 +237,11 @@ async def read_log(file_path, profile) -> None:
 						print("NO RESOURCE FOUND URL : %s %s%s"%(params["method"], scheme, url))
 						continue;
 
+					if params["method"] in path.methods:
+						for s_id in path.methods[params["method"]]["sources"]:
+							if s_id in sources:
+								del sources[s_id];
+
 					path.methods[params["method"]] = {
 						"request" :  {"method" : method, "headers" : "", "data" : "" , "encoded" : ""},
 						"response" : { "headers" : "", "data" : "", "encoded" : "" },
@@ -245,7 +251,7 @@ async def read_log(file_path, profile) -> None:
 					};
 
 					sources[source_id] = path.methods[params["method"]];
-					print("%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
+					print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
 					pass;
 
 				else:
@@ -255,32 +261,28 @@ async def read_log(file_path, profile) -> None:
 				
 				req, res = sources[source_id]["request"], sources[source_id]["response"];
 
-				if event_type in ["HTTP2_SESSION_SEND_HEADERS", "CORS_REQUEST", "URL_REQUEST_START_JOB"] : # "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
+				if "headers" in params:
 
-					if "headers" in params:
+					if event_type in ["HTTP2_SESSION_SEND_HEADERS", "CORS_REQUEST", "URL_REQUEST_START_JOB", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
 						req["headers"] = params["headers"];
+				
+					elif event_type in ["HTTP2_SESSION_RECV_HEADERS", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
+						res["headers"] = params["headers"];
 					else:
-						print("Headers not found %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
-				
-				elif event_type in ["HTTP2_SESSION_RECV_HEADERS", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
-					res["headers"] = params["headers"];
-				
-				elif event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ"]:
-					res["data"] += params["bytes"];
-					
+						print("HEADERS: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
-				elif event_type in ["HTTP2_SESSION_RECV_DATA"]:
-					print("%s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
-					print(params);
+				if "bytes" in params:
+					if event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ"]:
+						sources[source_id]["response"]["data"] += params["bytes"];
+					elif event_type in ["URL_REQUEST_JOB_BYTES_READ"]:
+						res["encoded"] +=  params["bytes"];
+					else:
+						print("BYTES: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
-				elif event_type in ["URL_REQUEST_JOB_BYTES_READ"]:
-					res["encoded"] +=  params["bytes"];
-					
-				elif len(params) > 0 and event_type not in INGNORE_EVENT_TYPES :
-						print("Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 			
-
-				if phase == "PHASE_END" :
+				if phase == "PHASE_END" and (len(res["data"]) > 0 or len(res["encoded"]) > 0):
+					print(params)
+					print(source_type, event_type, " Phase Ended")
 					handle_url_request(sources[source_id]);
 			
 			del buff;
