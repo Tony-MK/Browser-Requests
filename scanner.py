@@ -12,7 +12,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * 48;
+CACHE_DURATION = 3600 * 3;
 
 BATCH_SIZE = MEGA_BYTE * 64;
 
@@ -117,8 +117,9 @@ def handle_url_request(url_req):
 		print("URL REQUEST HANDLE SUCCEDED " + ''.join(['-'] * 133), end = "\n\n");
 		pass;
 		
-	except json.JSONDecodeError as e:
+	except Exception as e:
 		print("URL REQUEST HANDLE FAILED %s"%(e) + ''.join(['-'] * 133), end = "\n\n");
+	
 	
 	
 
