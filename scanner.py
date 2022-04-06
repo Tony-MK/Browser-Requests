@@ -142,8 +142,6 @@ def read_constants(file):
 
 async def read_log(file_path, profile) -> None:
 	
-	delete = False;
-
 	with open(file_path, "r") as file:
 		
 		constants = read_constants(file);
@@ -231,10 +229,11 @@ async def read_log(file_path, profile) -> None:
 					
 					#print(profile.Hosts[host], len(profile.Hosts[host].routes), _path.split("/"));
 
-					delete = False;
 					path = profile.Hosts[host].find(_path.split("/"));
 
-					if path.resource == None:
+					if path == None:
+						return path;
+					elif path.resource == None:
 						#print("NO PATH FOUND FOR URL : %s %s%s/%s"%(params["method"], scheme, host,_path))
 						continue;
 
@@ -289,15 +288,5 @@ async def read_log(file_path, profile) -> None:
 					del sources[source_id];
 			
 			del buff;
-		
-	try:
-		
-		if delete == True:
-			print("DELETING ... %s"%(file_path.split("\\")[-1]));
-			#os.delete(path=file_path);
-			
-	except PermissionError as e:
-		print(e);
-		pass;
 		
 				
