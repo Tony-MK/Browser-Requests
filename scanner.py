@@ -124,11 +124,6 @@ def handle_url_request(url_req : dict) -> None:
 		print_data(resp["data"]);
 		print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
 	
-		
-	
-	
-	
-
 def read_constants(file):
 
 	constants = file.readline();
