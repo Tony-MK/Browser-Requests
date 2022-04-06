@@ -12,7 +12,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * 3;
+CACHE_DURATION = 3600 * .3;
 
 BATCH_SIZE = MEGA_BYTE * 64;
 
@@ -90,35 +90,34 @@ def decode_event(event: dict, constants: dict) -> dict:
 	return event;
 
 
-def print_data(data, n = 100):
+def print_data(data : str, n = 100) -> None:
 	n = int(n/2);
 	return data[:n] + "\n" + "".join(["...."] * 25) + "\n" + data[-n:] if len(data) > n else data;
 
 
-def handle_url_request(url_req):
+def handle_url_request(url_req : dict) -> None:
 		
 	req, resp = url_req["request"], url_req["response"];
+	query = url_req["path"].endpoints[req["method"]];
 
-	print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource));
-	print("REQUEST %s - %s Headers : %d Data : %d bytes"%(req["method"],url_req["path"].url, len(req["headers"]), len(req["data"])));
-	print("RESPONSE - Headers : %d Data : %d bytes Encoded: %d bytes"%( len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
-	
-	if len(resp["data"])  == 0:
-		return;
-		
-	data = base64.b64decode(resp["data"]).decode('UTF-8', 'ignore');
-	print_data(data);
 
 	try:
-
-		handler = getattr(url_req["path"].resource, url_req["path"].endpoints[req["method"]]["handler"]);
-		print('HANDLING URL REQUEST....')
-		handler(url_req["path"].endpoints[req["method"]]['decoder'](data));
-		print("URL REQUEST HANDLE SUCCEDED " + ''.join(['-'] * 133), end = "\n\n");
-		pass;
+		
+		decoded = query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore'));
 		
 	except Exception as e:
-		print("URL REQUEST HANDLE FAILED %s"%(e) + ''.join(['-'] * 133), end = "\n\n");
+		print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource));
+		print("REQUEST %s - %s Headers : %d Data : %d bytes"%(req["method"],url_req["path"].url, len(req["headers"]), len(req["data"])));
+		print("RESPONSE - Headers : %d Data : %d bytes Encoded: %d bytes"%( len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
+		print_data(resp["data"]);
+		print("URL REQUEST HANDLE FAILED %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
+	
+	else:
+
+		getattr(
+			url_req["path"].resource, 
+			url_req["path"].endpoints[req["method"]]["handler"]
+		)(decoded)
 	
 	
 	
@@ -163,11 +162,10 @@ async def read_log(file_path, profile) -> None:
 				while nth_byte == os.stat(file_path).st_size:
 					p += 1;
 					await asyncio.sleep(.3);
-					if p%33 == 0:
+					if p%333 == 0:
 						print("Waiting : %s"%(file_stats(file, file_path, nth_byte)));
 					
 			
-			print("Reading : %s "%(file_stats(file, file_path, nth_byte)));
 			file.seek(nth_byte, os.SEEK_SET);
 			buff = file.read(BATCH_SIZE);
 			nth_byte += len(buff);
@@ -188,8 +186,8 @@ async def read_log(file_path, profile) -> None:
 
 						event = json.loads(event[:-3]);
 						running = True;
-					except json.JSONDecodeError as e:
-						print('Event', event[:200], e);
+					except json.JSONDecodeError as e1:
+						print('Event :' +  str(e1)+ '\n' + str(e1) + '\n' + event[:200], e, end = '\n\n');
 						continue;
 
 				event = decode_event(event, constants);
@@ -230,19 +228,15 @@ async def read_log(file_path, profile) -> None:
 					delete = False;
 					path = profile.Hosts[host].find(_path.split("/"));
 
-					if path == None :
-						print("NO RESOURCE PATH : %s %s%s/%s"%(params["method"], scheme, host,_path))
+					if path == None or path.resource == None:
+						print("NO PATH FOUND FOR URL : %s %s%s/%s"%(params["method"], scheme, host,_path))
 						continue;
 
-					elif path.resource == None:
-						print("NO RESOURCE FOUND URL : %s %s%s"%(params["method"], scheme, url))
-						continue;
-
-					if params["method"] in path.methods:
+					elif params["method"] in path.methods:
 						for s_id in path.methods[params["method"]]["sources"]:
 							if s_id in sources:
 								del sources[s_id];
-
+		
 					path.methods[params["method"]] = {
 						"request" :  {"method" : method, "headers" : "", "data" : "" , "encoded" : ""},
 						"response" : { "headers" : "", "data" : "", "encoded" : "" },
@@ -273,18 +267,20 @@ async def read_log(file_path, profile) -> None:
 						print("HEADERS: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
 				if "bytes" in params:
+
 					if event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ"]:
 						sources[source_id]["response"]["data"] += params["bytes"];
+
 					elif event_type in ["URL_REQUEST_JOB_BYTES_READ"]:
 						res["encoded"] +=  params["bytes"];
+						
 					else:
 						print("BYTES: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
 			
 				if phase == "PHASE_END" and (len(res["data"]) > 0 or len(res["encoded"]) > 0):
-					print(params)
-					print(source_type, event_type, " Phase Ended")
 					handle_url_request(sources[source_id]);
+					del sources[source_id];
 			
 			del buff;
 			pass;
