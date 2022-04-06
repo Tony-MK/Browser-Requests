@@ -1,6 +1,6 @@
 from asyncio import constants
 import base64
-from cgi import parse_multipart
+import brotli;
 from datetime import datetime
 import asyncio
 import gzip
@@ -12,7 +12,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * .3;
+CACHE_DURATION = 3600 / 4;
 
 BATCH_SIZE = MEGA_BYTE * 64;
 
@@ -97,14 +97,26 @@ def print_data(data : str, n = 100) -> None:
 
 def handle_url_request(url_req : dict) -> None:
 		
-	req, resp = url_req["request"], url_req["response"];
-	query = url_req["path"].endpoints[req["method"]];
-
-
 	try:
+
+		req, resp = url_req["request"], url_req["response"];
+		query = url_req["path"].endpoints[req["method"]];
+
+		handler = getattr(
+			url_req["path"].resource, 
+			url_req["path"].endpoints[req["method"]]["handler"]
+		)
 		
-		decoded = query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore'));
+		try:
+
+			handler(query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')));
+			pass;
 		
+		except json.JSONDecodeError as e:
+				
+			handler(query['decoder'](base64.b64decode(brotli.decompress(resp["encoded"].encode("UTF-8"))).decode('UTF-8', 'ignore')));
+			pass;
+
 	except Exception as e:
 		print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource));
 		print("REQUEST %s - %s Headers : %d Data : %d bytes"%(req["method"],url_req["path"].url, len(req["headers"]), len(req["data"])));
@@ -112,12 +124,7 @@ def handle_url_request(url_req : dict) -> None:
 		print_data(resp["data"]);
 		print("URL REQUEST HANDLE FAILED %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
 	
-	else:
-
-		getattr(
-			url_req["path"].resource, 
-			url_req["path"].endpoints[req["method"]]["handler"]
-		)(decoded)
+		
 	
 	
 	
@@ -173,8 +180,10 @@ async def read_log(file_path, profile) -> None:
 			for event in buff.split(",\n"):
 				
 				if event == "":
+					
 					if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
 						running = False;
+
 					continue;
 
 				try:
@@ -187,12 +196,17 @@ async def read_log(file_path, profile) -> None:
 						event = json.loads(event[:-3]);
 						running = True;
 					except json.JSONDecodeError as e1:
-						print('Event :' +  str(e1)+ '\n' + str(e1) + '\n' + event[:200], e, end = '\n\n');
+						print('Event - Err (1) : ' +  str(e)+ '\nErr (2) :' + str(e1) + '\n' + event[:200], e, end = '\n\n');
 						continue;
 
 				event = decode_event(event, constants);
 				
 				source_id, source_type = event["source"]["id"], event["source"]["type"]; del event["source"];
+				
+
+				if source_type in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
+					continue;
+
 				event_type = event["type"]; del event["type"];
 				params = event["params"]; del event["params"];
 				phase = event["phase"]; del event["phase"];
@@ -200,10 +214,7 @@ async def read_log(file_path, profile) -> None:
 				assert len(event) == 0, str(event.keys());
 				del event;
 
-				if source_type in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
-					continue;
-
-				elif source_id in sources:
+				if source_id in sources:
 					pass;
 
 				elif "source_dependency" in params and params["source_dependency"]["id"] in sources:
@@ -228,8 +239,8 @@ async def read_log(file_path, profile) -> None:
 					delete = False;
 					path = profile.Hosts[host].find(_path.split("/"));
 
-					if path == None or path.resource == None:
-						print("NO PATH FOUND FOR URL : %s %s%s/%s"%(params["method"], scheme, host,_path))
+					if path.resource == None:
+						#print("NO PATH FOUND FOR URL : %s %s%s/%s"%(params["method"], scheme, host,_path))
 						continue;
 
 					elif params["method"] in path.methods:
@@ -246,7 +257,7 @@ async def read_log(file_path, profile) -> None:
 					};
 
 					sources[source_id] = path.methods[params["method"]];
-					print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
+					#print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
 					pass;
 
 				else:
@@ -278,12 +289,11 @@ async def read_log(file_path, profile) -> None:
 						print("BYTES: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
 			
-				if phase == "PHASE_END" and (len(res["data"]) > 0 or len(res["encoded"]) > 0):
+				if phase == "PHASE_END":
 					handle_url_request(sources[source_id]);
 					del sources[source_id];
 			
 			del buff;
-			pass;
 		
 	try:
 		
