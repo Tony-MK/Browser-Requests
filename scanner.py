@@ -118,11 +118,11 @@ def handle_url_request(url_req : dict) -> None:
 			pass;
 
 	except Exception as e:
-		print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource));
-		print("REQUEST %s - %s Headers : %d Data : %d bytes"%(req["method"],url_req["path"].url, len(req["headers"]), len(req["data"])));
+		print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource),  req["method"], url_req["path"].url);
+		print("REQUEST - Headers : %d Data : %d bytes"%(len(req["headers"]), len(req["data"])), end = ' | ');
 		print("RESPONSE - Headers : %d Data : %d bytes Encoded: %d bytes"%( len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
 		print_data(resp["data"]);
-		print("URL REQUEST HANDLE FAILED %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
+		print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
 	
 		
 	
