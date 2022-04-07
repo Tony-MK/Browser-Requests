@@ -12,7 +12,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 / 4;
+CACHE_DURATION = 3600 * 72;
 
 BATCH_SIZE = MEGA_BYTE * 64;
 
@@ -162,7 +162,7 @@ async def read_log(file_path, profile) -> None:
 				while nth_byte == os.stat(file_path).st_size:
 					p += 1;
 					await asyncio.sleep(.3);
-					if p%333 == 0:
+					if p%33 == 0:
 						print("Waiting : %s"%(file_stats(file, file_path, nth_byte)));
 					
 			
@@ -196,7 +196,6 @@ async def read_log(file_path, profile) -> None:
 				
 				source_id, source_type = event["source"]["id"], event["source"]["type"]; del event["source"];
 				
-
 				if source_type in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
 					continue;
 
@@ -232,7 +231,8 @@ async def read_log(file_path, profile) -> None:
 					path = profile.Hosts[host].find(_path.split("/"));
 
 					if path == None:
-						return path;
+						continue;
+
 					elif path.resource == None:
 						#print("NO PATH FOUND FOR URL : %s %s%s/%s"%(params["method"], scheme, host,_path))
 						continue;
@@ -251,7 +251,7 @@ async def read_log(file_path, profile) -> None:
 					};
 
 					sources[source_id] = path.methods[params["method"]];
-					#print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
+					print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
 					pass;
 
 				else:
@@ -284,8 +284,9 @@ async def read_log(file_path, profile) -> None:
 
 			
 				if phase == "PHASE_END":
-					handle_url_request(sources[source_id]);
-					del sources[source_id];
+					if (len(res["data"]) > 0):
+						handle_url_request(sources[source_id]);
+					#del sources[source_id];
 			
 			del buff;
 		
