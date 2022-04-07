@@ -13,9 +13,9 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * .3;
+CACHE_DURATION = 3600 * 1;
 
-BATCH_SIZE = MEGA_BYTE * 128;
+BATCH_SIZE = MEGA_BYTE * 32;
 
 TIME_ZONE = 10800 * int(10 ** 3);
 
@@ -58,8 +58,6 @@ def decode_headers(headers):
 	
 	return { header.split(': ')[0] : header.split(': ')[1] for header in headers };
 
-
-
 def get_file_paths(dir_path):
 
 	file_paths = list();
@@ -68,6 +66,7 @@ def get_file_paths(dir_path):
 
 		if os.stat(file_path).st_size == 0:
 			os.delete(file_path);
+			pass;
 
 		elif datetime.now().timestamp() - os.stat(file_path).st_mtime < CACHE_DURATION:
 			file_paths.append(file_path);
@@ -85,7 +84,7 @@ def decode_event(event: dict, constants: dict) -> dict:
 
 	event["source"]["start_time"] = constants["timeTickOffset"] + int(event["source"]["start_time"])
 	event["source"]["type"] = constants["logSourceTypeMap"][event["source"]["type"]]
-	event["time"] = constants["timeTickOffset"] + int(event["time"])
+	#event["time"] = constants["timeTickOffset"] + int(event["time"])
 	event["phase"] = constants["logEventPhaseMap"][event["phase"]]
 	event["type"]  = constants["logEventTypesMap"][event["type"]];
 	return event;
@@ -151,54 +150,43 @@ async def read_log(file_path, profile) -> None:
 		file.readline();
 		file.readline();
 		
-		nth_byte, running, sources = file.tell(), True, dict();
+		nth_byte, running, sources, l_len = file.tell(), True, dict(), 0;
 
 		while running:
 			p = 0;
-			if nth_byte == os.stat(file_path).st_size:
+			if nth_byte - l_len == os.stat(file_path).st_size:
 
 				if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
 					break;
 				
-				while nth_byte == os.stat(file_path).st_size:
+				while nth_byte - l_len == os.stat(file_path).st_size:
 					p += 1;
 					await asyncio.sleep(.3);
 					if p%33 == 0:
 						print("Waiting : %s"%(file_stats(file, file_path, nth_byte)));
 					
-			
-			file.seek(nth_byte, os.SEEK_SET);
+			print("Reading : %s"%(file_stats(file, file_path, nth_byte - l_len)));
+
+			file.seek(nth_byte - l_len, os.SEEK_SET);
 			buff = file.read(BATCH_SIZE);
 			nth_byte += len(buff);
 			buff = buff.split(",\n");
-			nth_byte -= len(buff[-1]);
+			l_len = len(buff[-1]);
 
-			for n, event in enumerate(buff):
+			for n, event in enumerate(buff[:-1]):
 				
-				if event == "":
-					
-					if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
-						running = False;
-
-					continue;
-
 				try:
 					event = json.loads(event);
 					running = True;
 				except json.decoder.JSONDecodeError as e:
 					
 					try:
-						
-						if buff[:-2] == '}]':
-							event = json.loads(event[:-1]);
-							running = False;
-							
-						else:
-							event = json.loads(event[:-3]);
-							running = True;
+					
+						event = json.loads(event[:-1] if buff[:-2] == '}]' else event[:-3]);
+						running = True;
 
 					except json.JSONDecodeError as e1:
-						if n == len(buff) - 1:
+						if n == len(buff) - 1 and datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
 							running = False;
 							continue;
 
