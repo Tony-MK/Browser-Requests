@@ -1,5 +1,6 @@
 from asyncio import constants
 import base64
+from cmath import log
 import brotli;
 from datetime import datetime
 import asyncio
@@ -12,9 +13,9 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * 72;
+CACHE_DURATION = 3600 * .3;
 
-BATCH_SIZE = MEGA_BYTE * 64;
+BATCH_SIZE = MEGA_BYTE * 128;
 
 TIME_ZONE = 10800 * int(10 ** 3);
 
@@ -118,6 +119,7 @@ def handle_url_request(url_req : dict) -> None:
 			pass;
 
 	except Exception as e:
+		return;
 		print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource),  req["method"], url_req["path"].url);
 		print("REQUEST - Headers : %d Data : %d bytes"%(len(req["headers"]), len(req["data"])), end = ' | ');
 		print("RESPONSE - Headers : %d Data : %d bytes Encoded: %d bytes"%( len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
@@ -156,7 +158,6 @@ async def read_log(file_path, profile) -> None:
 			if nth_byte == os.stat(file_path).st_size:
 
 				if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
-					print("Stopped : %s"%(file_stats(file, file_path, nth_byte)));
 					break;
 				
 				while nth_byte == os.stat(file_path).st_size:
@@ -169,8 +170,10 @@ async def read_log(file_path, profile) -> None:
 			file.seek(nth_byte, os.SEEK_SET);
 			buff = file.read(BATCH_SIZE);
 			nth_byte += len(buff);
+			buff = buff.split(",\n");
+			nth_byte -= len(buff[-1]);
 
-			for event in buff.split(",\n"):
+			for n, event in enumerate(buff):
 				
 				if event == "":
 					
@@ -185,10 +188,20 @@ async def read_log(file_path, profile) -> None:
 				except json.decoder.JSONDecodeError as e:
 					
 					try:
+						
+						if buff[:-2] == '}]':
+							event = json.loads(event[:-1]);
+							running = False;
+							
+						else:
+							event = json.loads(event[:-3]);
+							running = True;
 
-						event = json.loads(event[:-3]);
-						running = True;
 					except json.JSONDecodeError as e1:
+						if n == len(buff) - 1:
+							running = False;
+							continue;
+
 						print('Event - Err (1) : ' +  str(e)+ '\nErr (2) :' + str(e1) + '\n' + event[:200], e, end = '\n\n');
 						continue;
 
@@ -237,10 +250,10 @@ async def read_log(file_path, profile) -> None:
 						#print("NO PATH FOUND FOR URL : %s %s%s/%s"%(params["method"], scheme, host,_path))
 						continue;
 
-					elif params["method"] in path.methods:
-						for s_id in path.methods[params["method"]]["sources"]:
-							if s_id in sources:
-								del sources[s_id];
+					#elif params["method"] in path.methods:
+					#	for s_id in path.methods[params["method"]]["sources"]:
+					#		if s_id in sources:
+					#			del sources[s_id];
 		
 					path.methods[params["method"]] = {
 						"request" :  {"method" : method, "headers" : "", "data" : "" , "encoded" : ""},
@@ -251,8 +264,7 @@ async def read_log(file_path, profile) -> None:
 					};
 
 					sources[source_id] = path.methods[params["method"]];
-					print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
-					pass;
+					#print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
 
 				else:
 
@@ -269,25 +281,29 @@ async def read_log(file_path, profile) -> None:
 					elif event_type in ["HTTP2_SESSION_RECV_HEADERS", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
 						res["headers"] = params["headers"];
 					else:
-						print("HEADERS: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
+						log.debug("HEADERS: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
 				if "bytes" in params:
 
 					if event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ"]:
-						sources[source_id]["response"]["data"] += params["bytes"];
+						res["data"] += params["bytes"];
 
 					elif event_type in ["URL_REQUEST_JOB_BYTES_READ"]:
 						res["encoded"] +=  params["bytes"];
 						
 					else:
-						print("BYTES: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
+						log.debug("BYTES: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
 			
 				if phase == "PHASE_END":
-					if (len(res["data"]) > 0):
+					if len(res["data"]) > 0:
 						handle_url_request(sources[source_id]);
 					#del sources[source_id];
-			
+
 			del buff;
+
+		
+		print("Stopped : %s"%(file_stats(file, file_path, nth_byte)));
+
 		
 				
