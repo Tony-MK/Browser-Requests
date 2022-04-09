@@ -118,12 +118,12 @@ def handle_url_request(url_req : dict) -> None:
 			pass;
 
 	except Exception as e:
-		return;
-		print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource),  req["method"], url_req["path"].url);
-		print("REQUEST - Headers : %d Data : %d bytes"%(len(req["headers"]), len(req["data"])), end = ' | ');
-		print("RESPONSE - Headers : %d Data : %d bytes Encoded: %d bytes"%( len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
-		print_data(resp["data"]);
-		print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
+		if "bets" in url_req["path"].url:
+			print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource),  req["method"], url_req["path"].url);
+			print("REQUEST - Headers : %d Data : %d bytes"%(len(req["headers"]), len(req["data"])), end = ' | ');
+			print("RESPONSE - Headers : %d Data : %d bytes Encoded: %d bytes"%( len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
+			print_data(resp["data"]);
+			print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
 	
 def read_constants(file):
 
@@ -154,50 +154,53 @@ async def read_log(file_path, profile) -> None:
 
 		while running:
 			p = 0;
-			if nth_byte - l_len == os.stat(file_path).st_size:
+			if nth_byte == os.stat(file_path).st_size:
 
 				if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
 					break;
 				
-				while nth_byte - l_len == os.stat(file_path).st_size:
+				while nth_byte == os.stat(file_path).st_size:
 					p += 1;
 					await asyncio.sleep(.3);
 					if p%33 == 0:
 						print("Waiting : %s"%(file_stats(file, file_path, nth_byte)));
 					
-			print("Reading : %s"%(file_stats(file, file_path, nth_byte - l_len)));
+			print("Reading : %s"%(file_stats(file, file_path, nth_byte)));
 
-			file.seek(nth_byte - l_len, os.SEEK_SET);
+			file.seek(nth_byte, os.SEEK_SET);
 			buff = file.read(BATCH_SIZE);
 			nth_byte += len(buff);
 			buff = buff.split(",\n");
-			l_len = len(buff[-1]);
 
-			for n, event in enumerate(buff[:-1]):
+			for n, event in enumerate(buff):
 				
 				try:
 					event = json.loads(event);
 					running = True;
+
 				except json.decoder.JSONDecodeError as e:
+
+					if len(event) == 0:
+						continue;		
 					
 					try:
-					
+
 						event = json.loads(event[:-1] if buff[:-2] == '}]' else event[:-3]);
 						running = True;
 
 					except json.JSONDecodeError as e1:
-						if n == len(buff) - 1 and datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
-							running = False;
-							continue;
-
-						print('Event - Err (1) : ' +  str(e)+ '\nErr (2) :' + str(e1) + '\n' + event[:200], e, end = '\n\n');
+						if n == len(buff):# and datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
+							running = False;						
+						else:
+							print('EVENT DECODE ERROR - ' + str(e) + ' : ' + event[:200]);
+							
 						continue;
 
 				event = decode_event(event, constants);
 				
 				source_id, source_type = event["source"]["id"], event["source"]["type"]; del event["source"];
 				
-				if source_type in ["SOCKET", "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
+				if source_type in ["SOCKET"]:#, "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
 					continue;
 
 				event_type = event["type"]; del event["type"];
@@ -269,7 +272,7 @@ async def read_log(file_path, profile) -> None:
 					elif event_type in ["HTTP2_SESSION_RECV_HEADERS", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
 						res["headers"] = params["headers"];
 					else:
-						log.debug("HEADERS: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
+						print("Debug:HEADERS: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
 				if "bytes" in params:
 
@@ -280,7 +283,7 @@ async def read_log(file_path, profile) -> None:
 						res["encoded"] +=  params["bytes"];
 						
 					else:
-						log.debug("BYTES: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
+						print("Debug:BYTES: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
 			
 				if phase == "PHASE_END":
@@ -289,9 +292,10 @@ async def read_log(file_path, profile) -> None:
 					#del sources[source_id];
 
 			del buff;
+			pass;
 
-		
-		print("Stopped : %s"%(file_stats(file, file_path, nth_byte)));
+		print("DONE : %s"%(file_stats(file, file_path, nth_byte)));
+		pass;
 
 		
 				
