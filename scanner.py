@@ -13,7 +13,7 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * 1;
+CACHE_DURATION = 3600 * .3;
 
 BATCH_SIZE = MEGA_BYTE * 32;
 
@@ -165,7 +165,7 @@ async def read_log(file_path, profile) -> None:
 					if p%33 == 0:
 						print("Waiting : %s"%(file_stats(file, file_path, nth_byte)));
 					
-			print("Reading : %s"%(file_stats(file, file_path, nth_byte)));
+			#print("Reading : %s"%(file_stats(file, file_path, nth_byte)));
 
 			file.seek(nth_byte, os.SEEK_SET);
 			buff = file.read(BATCH_SIZE);
