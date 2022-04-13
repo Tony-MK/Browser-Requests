@@ -1,10 +1,7 @@
-from asyncio import constants
-import base64
-from cmath import log
-import brotli;
 from datetime import datetime
+import base64
+import brotli;
 import asyncio
-import gzip
 import glob
 import json
 import os
@@ -13,13 +10,13 @@ KILO_BYTE = 2 ** 10;
 MEGA_BYTE = 2 ** 20;
 GIGA_BYTE = 2 ** 30;
 
-CACHE_DURATION = 3600 * .3;
+CACHE_DURATION = 300;
 
-BATCH_SIZE = MEGA_BYTE * 32;
+BATCH_SIZE = MEGA_BYTE * 64;
 
 TIME_ZONE = 10800 * int(10 ** 3);
 
-INGNORE_EVENT_TYPES = [
+IGNORE_EVENT_TYPES = [
 	"REQUEST_ALIVE",
 	"CREATED_BY",
     "CHECK_CORS_PREFLIGHT_REQUIRED",
@@ -44,7 +41,7 @@ INGNORE_EVENT_TYPES = [
     "HTTP_STREAM_JOB_CONTROLLER_PROXY_SERVER_RESOLVED",
 ];
 
-file_stats = lambda file, file_path, nth_byte : "%.3f MB / %.3f MB  (%.3f%s) Path : %s | Last Update : %.3f seconds ago"%(nth_byte / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, nth_byte / os.stat(file_path).st_size * 100 , "%", file_path.split("\\")[1], datetime.now().timestamp() - os.stat(file_path).st_mtime)
+file_stats = lambda file, file_path, nth_byte : "%.1f MB / %.1f MB  (%.3f%s) File : %s Last Update : %d secs ago"%(nth_byte / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, nth_byte / os.stat(file_path).st_size * 100 , "%", file_path.split("\\")[1], datetime.now().timestamp() - os.stat(file_path).st_mtime)
 
 
 def decode_headers(headers):
@@ -60,18 +57,24 @@ def decode_headers(headers):
 
 def get_file_paths(dir_path):
 
-	file_paths = list();
+	paths = glob.glob(dir_path + "/*.json");
 
-	for file_num, file_path in  enumerate(glob.glob(dir_path + "/*.json")):
+	paths.sort(key = lambda fp : os.stat(fp).st_mtime, reverse = True);
 
-		if os.stat(file_path).st_size == 0:
+	file_paths = set(paths[0:1]);
+
+	for file_path in paths:
+
+		if os.stat(file_path).st_size < KILO_BYTE:
 			os.delete(file_path);
-			pass;
+			continue;
 
-		elif datetime.now().timestamp() - os.stat(file_path).st_mtime < CACHE_DURATION:
-			file_paths.append(file_path);
+		elif datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
+			break;
 
-	file_paths.sort(key = lambda file_path : os.stat(file_path).st_mtime);
+		file_paths.add(file_path);
+		pass;
+
 	return file_paths;
 
 def decode_event(event: dict, constants: dict) -> dict:
@@ -112,16 +115,20 @@ def handle_url_request(url_req : dict) -> None:
 			handler(query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')));
 			pass;
 		
-		except json.JSONDecodeError as e:
-				
-			handler(query['decoder'](base64.b64decode(brotli.decompress(resp["encoded"].encode("UTF-8"))).decode('UTF-8', 'ignore')));
-			pass;
+		except json.JSONDecodeError:
+			
+			try:
+
+				handler(query['decoder'](base64.b64decode(brotli.decompress(resp["encoded"].encode("UTF-8"))).decode('UTF-8', 'ignore')));
+				pass;
+			
+			except Exception:
+				return;
 
 	except Exception as e:
 		if "bets" in url_req["path"].url:
-			print("\n" + "".join(["-"] * 133) + "\nResource : " + str(url_req["path"].resource),  req["method"], url_req["path"].url);
-			print("REQUEST - Headers : %d Data : %d bytes"%(len(req["headers"]), len(req["data"])), end = ' | ');
-			print("RESPONSE - Headers : %d Data : %d bytes Encoded: %d bytes"%( len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
+			print("REQUEST - %s Headers : %d Data : %d bytes"%(url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
+			print("RESPONSE - Headers : %d Data : %d bytes Encoded: %d bytes"%(len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
 			print_data(resp["data"]);
 			print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
 	
@@ -153,6 +160,7 @@ async def read_log(file_path, profile) -> None:
 		nth_byte, running, sources, l_len = file.tell(), True, dict(), 0;
 
 		while running:
+
 			p = 0;
 			if nth_byte == os.stat(file_path).st_size:
 
@@ -165,7 +173,7 @@ async def read_log(file_path, profile) -> None:
 					if p%33 == 0:
 						print("Waiting : %s"%(file_stats(file, file_path, nth_byte)));
 					
-			#print("Reading : %s"%(file_stats(file, file_path, nth_byte)));
+			print("Reading : %s"%(file_stats(file, file_path, nth_byte)));
 
 			file.seek(nth_byte, os.SEEK_SET);
 			buff = file.read(BATCH_SIZE);
@@ -175,25 +183,38 @@ async def read_log(file_path, profile) -> None:
 			for n, event in enumerate(buff):
 				
 				try:
+
 					event = json.loads(event);
 					running = True;
 
 				except json.decoder.JSONDecodeError as e:
 
-					if len(event) == 0:
-						continue;		
-					
+
 					try:
 
-						event = json.loads(event[:-1] if buff[:-2] == '}]' else event[:-3]);
-						running = True;
+						if len(event) == 0:
+							continue;
+
+						elif event[0] != "{" or event[-1] != "}":
+							print("INVALID JSON STRING (%s bytes) : %s"%(len(event), event[:100]));
+							continue;
+
+						elif event[:-2] == '}]':
+							event = json.loads(event[:-1]);
+							running = False;
+							pass;
+
+						else:
+
+							event = json.loads(event[:-3]);
+							running = True;
+							pass;
 
 					except json.JSONDecodeError as e1:
-						if n == len(buff):# and datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
-							running = False;						
-						else:
-							print('EVENT DECODE ERROR - ' + str(e) + ' : ' + event[:200]);
-							
+						#if n == len(buff):# and datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
+						#	running = False;						
+						#else:
+						print("EVENT DECODE ERROR - " + str(e) + '\n' + event, end = "\n\n");
 						continue;
 
 				event = decode_event(event, constants);
@@ -241,10 +262,10 @@ async def read_log(file_path, profile) -> None:
 						#print("NO PATH FOUND FOR URL : %s %s%s/%s"%(params["method"], scheme, host,_path))
 						continue;
 
-					#elif params["method"] in path.methods:
-					#	for s_id in path.methods[params["method"]]["sources"]:
-					#		if s_id in sources:
-					#			del sources[s_id];
+					elif params["method"] in path.methods:
+						for s_id in path.methods[params["method"]]["sources"]:
+							if s_id in sources:
+								del sources[s_id];
 		
 					path.methods[params["method"]] = {
 						"request" :  {"method" : method, "headers" : "", "data" : "" , "encoded" : ""},
@@ -271,8 +292,9 @@ async def read_log(file_path, profile) -> None:
 				
 					elif event_type in ["HTTP2_SESSION_RECV_HEADERS", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
 						res["headers"] = params["headers"];
+
 					else:
-						print("Debug:HEADERS: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
+						print("Debug - HEADERS: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
 				if "bytes" in params:
 
@@ -283,18 +305,18 @@ async def read_log(file_path, profile) -> None:
 						res["encoded"] +=  params["bytes"];
 						
 					else:
-						print("Debug:BYTES: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
+
+						print("Debug - BYTES: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
 			
 				if phase == "PHASE_END":
 					if len(res["data"]) > 0:
 						handle_url_request(sources[source_id]);
-					#del sources[source_id];
+						del sources[source_id];
 
 			del buff;
-			pass;
 
-		print("DONE : %s"%(file_stats(file, file_path, nth_byte)));
+		print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path, nth_byte)));
 		pass;
 
 		
