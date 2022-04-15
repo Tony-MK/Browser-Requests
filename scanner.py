@@ -12,7 +12,7 @@ GIGA_BYTE = 2 ** 30;
 
 CACHE_DURATION = 300;
 
-BATCH_SIZE = MEGA_BYTE * 64;
+BATCH_SIZE = GIGA_BYTE * 8;
 
 TIME_ZONE = 10800 * int(10 ** 3);
 
@@ -41,7 +41,7 @@ IGNORE_EVENT_TYPES = [
     "HTTP_STREAM_JOB_CONTROLLER_PROXY_SERVER_RESOLVED",
 ];
 
-file_stats = lambda file, file_path, nth_byte : "%.1f MB / %.1f MB  (%.3f%s) File : %s Last Update : %d secs ago"%(nth_byte / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, nth_byte / os.stat(file_path).st_size * 100 , "%", file_path.split("\\")[1], datetime.now().timestamp() - os.stat(file_path).st_mtime)
+file_stats = lambda file, file_path, nth_byte : "%.1f MB / %.1f MB  (%.3f%s) File : %s Last Update : %d secs ago"%(nth_byte / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, nth_byte / os.stat(file_path).st_size * 100 , "%", file.name, datetime.now().timestamp() - os.stat(file_path).st_mtime)
 
 
 def decode_headers(headers):
@@ -77,7 +77,7 @@ def get_file_paths(dir_path):
 
 	return file_paths;
 
-def decode_event(event: dict, constants: dict) -> dict:
+def map_event(event: dict, constants: dict) -> dict:
 
 	if "params" not in event:
 		event["params"] = {};
@@ -85,9 +85,13 @@ def decode_event(event: dict, constants: dict) -> dict:
 	elif "source_dependency" in event["params"]:
 		event["params"]["source_dependency"]["type"] = constants["logSourceTypeMap"][event["params"]["source_dependency"]["type"]]
 
+	if "source" not in event:
+		print(event, "\nNetwork Log event does not have source key")
+		return
+
 	event["source"]["start_time"] = constants["timeTickOffset"] + int(event["source"]["start_time"])
 	event["source"]["type"] = constants["logSourceTypeMap"][event["source"]["type"]]
-	#event["time"] = constants["timeTickOffset"] + int(event["time"])
+	event["time"] = constants["timeTickOffset"] + int(event["time"])
 	event["phase"] = constants["logEventPhaseMap"][event["phase"]]
 	event["type"]  = constants["logEventTypesMap"][event["type"]];
 	return event;
@@ -105,32 +109,25 @@ def handle_url_request(url_req : dict) -> None:
 		req, resp = url_req["request"], url_req["response"];
 		query = url_req["path"].endpoints[req["method"]];
 
-		handler = getattr(
-			url_req["path"].resource, 
-			url_req["path"].endpoints[req["method"]]["handler"]
-		)
+		handler = getattr(url_req["path"].resource, query["handler"])
 		
 		try:
 
-			handler(query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')));
+			handler(query['decoder'](base64.b64decode(brotli.decompress(resp["encoded"].encode("UTF-8"))).decode('UTF-8', 'ignore')));
+
 			pass;
 		
 		except json.JSONDecodeError:
 			
-			try:
-
-				handler(query['decoder'](base64.b64decode(brotli.decompress(resp["encoded"].encode("UTF-8"))).decode('UTF-8', 'ignore')));
-				pass;
+			handler(query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')));
+			pass;
 			
-			except Exception:
-				return;
-
 	except Exception as e:
-		if "bets" in url_req["path"].url:
-			print("REQUEST - %s Headers : %d Data : %d bytes"%(url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
-			print("RESPONSE - Headers : %d Data : %d bytes Encoded: %d bytes"%(len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
-			print_data(resp["data"]);
-			print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
+
+		print_data(resp["data"]);
+		print("REQUEST - Url: %s Headers : %d Data : %d"%(url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
+		print("RESPONSE - Headers : %d Data : %d Encoded: %d"%(len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
+		print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
 	
 def read_constants(file):
 
@@ -148,47 +145,50 @@ def read_constants(file):
 
 	return constants;
 
+async def wait_for_events(nth_byte, file, file_path):
+
+	p = 0;
+	while nth_byte == os.stat(file_path).st_size:
+		p --;
+		if p%33 == 0:
+			print("Waiting : %s"%(file_stats(file, nth_byte)));
+
+		await asyncio.sleep(.3);
+
 async def read_log(file_path, profile) -> None:
 	
 	with open(file_path, "r") as file:
 		
-		constants = read_constants(file);
+		constants, sources = read_constants(file), dict();
 
 		file.readline();
 		file.readline();
 		
-		nth_byte, running, sources, l_len = file.tell(), True, dict(), 0;
+		nth_byte, n_bytes, nth_iteration, running  = file.tell(), 0, 0, True;
 
 		while running:
 
-			p = 0;
-			if nth_byte == os.stat(file_path).st_size:
+			nth_iteration += 1;
 
-				if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
-					break;
-				
-				while nth_byte == os.stat(file_path).st_size:
-					p += 1;
-					await asyncio.sleep(.3);
-					if p%33 == 0:
-						print("Waiting : %s"%(file_stats(file, file_path, nth_byte)));
-					
-			print("Reading : %s"%(file_stats(file, file_path, nth_byte)));
+			wait_for_events(file = file, file_path = file_path, nth_byte = nth_byte)
 
+			nth_byte = nth_byte - n_bytes;
 			file.seek(nth_byte, os.SEEK_SET);
 			buff = file.read(BATCH_SIZE);
 			nth_byte += len(buff);
-			buff = buff.split(",\n");
 
-			for n, event in enumerate(buff):
+			buff = buff.split(",\n")
+			n_bytes = len(buff[-1]);
+			del buff[-1];
+
+			for event in buff:
 				
 				try:
 
 					event = json.loads(event);
 					running = True;
 
-				except json.decoder.JSONDecodeError as e:
-
+				except json.decoder.JSONDecodeError:
 
 					try:
 
@@ -197,6 +197,7 @@ async def read_log(file_path, profile) -> None:
 
 						elif event[0] != "{" or event[-1] != "}":
 							print("INVALID JSON STRING (%s bytes) : %s"%(len(event), event[:100]));
+							running = True;
 							continue;
 
 						elif event[:-2] == '}]':
@@ -210,19 +211,16 @@ async def read_log(file_path, profile) -> None:
 							running = True;
 							pass;
 
-					except json.JSONDecodeError as e1:
-						#if n == len(buff):# and datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
-						#	running = False;						
-						#else:
+					except json.JSONDecodeError as e:
 						print("EVENT DECODE ERROR - " + str(e) + '\n' + event, end = "\n\n");
 						continue;
 
-				event = decode_event(event, constants);
-				
-				source_id, source_type = event["source"]["id"], event["source"]["type"]; del event["source"];
-				
-				if source_type in ["SOCKET"]:#, "DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB"]:
+				event = map_event(event, constants);
+
+				if event == None or event["source"]["type"] in ["SOCKET"]: #"DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB":
 					continue;
+
+				source_id, source_type = event["source"]["id"], event["source"]["type"]; del event["source"];
 
 				event_type = event["type"]; del event["type"];
 				params = event["params"]; del event["params"];
@@ -231,58 +229,57 @@ async def read_log(file_path, profile) -> None:
 				assert len(event) == 0, str(event.keys());
 				del event;
 
-				if source_id in sources:
-					pass;
+				if source_id not in sources:
 
-				elif "source_dependency" in params and params["source_dependency"]["id"] in sources:
-					sources[source_id] = sources[params["source_dependency"]["id"]];
-					sources[source_id]["sources"].add(source_id)
-		
-				elif "url" in params and "method" in params:
+					if "source_dependency" in params and params["source_dependency"]["id"] in sources:
+						sources[source_id] = sources[params["source_dependency"]["id"]];
+						sources[source_id]["sources"].add(source_id)
 					
-					url = params["url"];
-
-					method = params["method"].lower()
-
-					scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:];
-
-					host, _path = url[:url.find('/')],  url[url.find('/') + 1:].split("?")[0];
-
-					if host not in profile.Hosts:
-						continue;
-					
-					#print(profile.Hosts[host], len(profile.Hosts[host].routes), _path.split("/"));
-
-					path = profile.Hosts[host].find(_path.split("/"));
-
-					if path == None:
+					elif "url" not in params or "method" not in params:
+						#print(event["source"]["type"], "Source Id Not Found : ", event["type"], event.keys(), event["params"].keys(), end = "\n");
 						continue;
 
-					elif path.resource == None:
-						#print("NO PATH FOUND FOR URL : %s %s%s/%s"%(params["method"], scheme, host,_path))
-						continue;
+					else:
+						url = params["url"];
 
-					elif params["method"] in path.methods:
-						for s_id in path.methods[params["method"]]["sources"]:
-							if s_id in sources:
-								del sources[s_id];
-		
-					path.methods[params["method"]] = {
-						"request" :  {"method" : method, "headers" : "", "data" : "" , "encoded" : ""},
-						"response" : { "headers" : "", "data" : "", "encoded" : "" },
-						"source_id" : source_id,
-						"sources" : set([source_id]),
-						"path" : path,
-					};
+						method = params["method"].lower()
 
-					sources[source_id] = path.methods[params["method"]];
-					#print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
+						scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:];
 
-				else:
+						host, _path = url[:url.find('/')],  url[url.find('/') + 1:].split("?")[0];
 
-					#print(event["source"]["type"], "Source Id Not Found : ", event["type"], event.keys(), event["params"].keys(), end = "\n");
-					continue;
-				
+						if host not in profile.Hosts:
+							continue;
+						
+						#print(profile.Hosts[host], len(profile.Hosts[host].routes), _path.split("/"));
+
+						path = profile.Hosts[host].find(_path.split("/"));
+
+						if path == None:
+							continue;
+
+						elif path.resource == None:
+							#print("NO PATH FOUND FOR URL : %s %s%s/%s"%(params["method"], scheme, host,_path))
+							continue;
+
+						elif params["method"] in path.methods:
+							for s_id in path.methods[params["method"]]["sources"]:
+								if s_id in sources:
+									del sources[s_id];
+			
+						path.methods[params["method"]] = {
+							"request" :  {"method" : method, "headers" : "", "data" : "" , "encoded" : ""},
+							"response" : { "headers" : "", "data" : "", "encoded" : "" },
+							"source_id" : source_id,
+							"sources" : set([source_id]),
+							"path" : path,
+						};
+
+						sources[source_id] = path.methods[params["method"]];
+						#print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
+						pass;
+
+						
 				req, res = sources[source_id]["request"], sources[source_id]["response"];
 
 				if "headers" in params:
@@ -308,13 +305,17 @@ async def read_log(file_path, profile) -> None:
 
 						print("Debug - BYTES: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
 
-			
 				if phase == "PHASE_END":
 					if len(res["data"]) > 0:
 						handle_url_request(sources[source_id]);
 						del sources[source_id];
 
+			if nth_iteration%33 == 0:
+				print("Reading : %s"%(file_stats(file, file_path, nth_byte)));
+
 			del buff;
+			pass;
+
 
 		print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path, nth_byte)));
 		pass;
