@@ -6,13 +6,12 @@ import glob
 import json
 import os
 
-KILO_BYTE = 2 ** 10;
-MEGA_BYTE = 2 ** 20;
-GIGA_BYTE = 2 ** 30;
+KILO_BYTE = 1024 ** 1;
+MEGA_BYTE = 1024 ** 2;
 
-CACHE_DURATION = 300;
+CACHE_DURATION = 3000;
 
-BATCH_SIZE = GIGA_BYTE * 8;
+BATCH_SIZE = MEGA_BYTE * 64;
 
 TIME_ZONE = 10800 * int(10 ** 3);
 
@@ -41,7 +40,7 @@ IGNORE_EVENT_TYPES = [
     "HTTP_STREAM_JOB_CONTROLLER_PROXY_SERVER_RESOLVED",
 ];
 
-file_stats = lambda file, file_path, nth_byte : "%.1f MB / %.1f MB  (%.3f%s) File : %s Last Update : %d secs ago"%(nth_byte / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, nth_byte / os.stat(file_path).st_size * 100 , "%", file.name, datetime.now().timestamp() - os.stat(file_path).st_mtime)
+file_stats = lambda file, file_path : "%.1f MB / %.1f MB  (%.3f%s) File : %s Last Update : %d secs ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file.name, datetime.now().timestamp() - os.stat(file_path).st_mtime)
 
 
 def decode_headers(headers):
@@ -55,25 +54,26 @@ def decode_headers(headers):
 	
 	return { header.split(': ')[0] : header.split(': ')[1] for header in headers };
 
-def get_file_paths(dir_path):
+def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True) -> list:
 
 	paths = glob.glob(dir_path + "/*.json");
 
-	paths.sort(key = lambda fp : os.stat(fp).st_mtime, reverse = True);
+	paths.sort(key = lambda fp : os.stat(fp).st_mtime, reverse = False);
 
-	file_paths = set(paths[0:1]);
+	file_paths = list();
+
+	if latest == True:
+		file_paths.append(paths[0]);
+		del paths[0];
+
+	start = datetime.now().timestamp() - CACHE_DURATION;
 
 	for file_path in paths:
 
-		if os.stat(file_path).st_size < KILO_BYTE:
-			os.delete(file_path);
-			continue;
-
-		elif datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
+		if start > os.stat(file_path).st_mtime:
 			break;
 
-		file_paths.add(file_path);
-		pass;
+		file_paths.append(file_path);
 
 	return file_paths;
 
@@ -113,21 +113,24 @@ def handle_url_request(url_req : dict) -> None:
 		
 		try:
 
-			handler(query['decoder'](base64.b64decode(brotli.decompress(resp["encoded"].encode("UTF-8"))).decode('UTF-8', 'ignore')));
+			data = brotli.decompress(resp["encoded"].encode("UTF-8"));
 
+			handler(query['decoder'](base64.b64decode(data).decode('UTF-8', 'ignore')));
 			pass;
 		
-		except json.JSONDecodeError:
-			
+		except Exception:
+
 			handler(query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')));
 			pass;
+		
 			
 	except Exception as e:
-
-		print_data(resp["data"]);
-		print("REQUEST - Url: %s Headers : %d Data : %d"%(url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
-		print("RESPONSE - Headers : %d Data : %d Encoded: %d"%(len(resp["headers"]), len(resp["data"]), len(resp["encoded"])));
-		print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
+		pass;
+		#print(''.join(['-'] * 133));
+		#print_data(resp["data"]);
+		#print("%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
+		#print("Encoded: %d Headers : %d Data : %d"%(len(resp["encoded"]), len(resp["headers"]), len(resp["data"])));
+		#print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
 	
 def read_constants(file):
 
@@ -149,14 +152,20 @@ async def wait_for_events(nth_byte, file, file_path):
 
 	p = 0;
 	while nth_byte == os.stat(file_path).st_size:
-		p --;
-		if p%33 == 0:
-			print("Waiting : %s"%(file_stats(file, nth_byte)));
 
-		await asyncio.sleep(.3);
+		if p%33 == 0:
+			print("Waiting : %s"%(file_stats(file, file_path)));
+
+		await asyncio.sleep(3);
+		p -= 1;
+
 
 async def read_log(file_path, profile) -> None:
 	
+	if MEGA_BYTE > os.stat(file_path).st_size:
+		print("SMALL LOG FILE : %d bytes %s"%(os.stat(file_path).st_size, file_path));
+		return;
+
 	with open(file_path, "r") as file:
 		
 		constants, sources = read_constants(file), dict();
@@ -170,7 +179,7 @@ async def read_log(file_path, profile) -> None:
 
 			nth_iteration += 1;
 
-			wait_for_events(file = file, file_path = file_path, nth_byte = nth_byte)
+			await wait_for_events(file = file, file_path = file_path, nth_byte = nth_byte)
 
 			nth_byte = nth_byte - n_bytes;
 			file.seek(nth_byte, os.SEEK_SET);
@@ -311,13 +320,13 @@ async def read_log(file_path, profile) -> None:
 						del sources[source_id];
 
 			if nth_iteration%33 == 0:
-				print("Reading : %s"%(file_stats(file, file_path, nth_byte)));
+				print("Reading : %s"%(file_stats(file, file_path)));
 
 			del buff;
 			pass;
 
 
-		print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path, nth_byte)));
+		print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
 		pass;
 
 		
