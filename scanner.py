@@ -9,11 +9,11 @@ import os
 KILO_BYTE = 1024 ** 1;
 MEGA_BYTE = 1024 ** 2;
 
-CACHE_DURATION = 3000;
+CACHE_DURATION = 333 * 3;
 
-BATCH_SIZE = MEGA_BYTE * 32;
+BATCH_SIZE = MEGA_BYTE * 96;
 
-TIME_ZONE = 10800 * int(10 ** 3);
+TIME_ZONE = 10800 * int(10 ** 1);
 
 IGNORE_EVENT_TYPES = [
 	"REQUEST_ALIVE",
@@ -30,7 +30,7 @@ IGNORE_EVENT_TYPES = [
     "HTTP2_SESSION_UPDATE_RECV_WINDOW",
     "HTTP2_STREAM_UPDATE_RECV_WINDOW",
     "HTTP2_SESSION_SEND_WINDOW_UPDATE",
-    #"HTTP2_SESSION_RECV_DATA",
+    "HTTP2_SESSION_RECV_DATA",
     "HTTP2_SESSION_RECV_SETTING",
     "HTTP_STREAM_JOB_CONTROLLER_BOUND" ,
     "HTTP_STREAM_REQUEST_BOUND_TO_JOB",
@@ -82,15 +82,15 @@ def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True) -> 
 
 def map_event(event: dict, constants: dict) -> dict:
 
-	if "params" not in event:
+	if "source" not in event:
+		print(event, "\nNetwork Log event does not have source key")
+		return;
+
+	elif "params" not in event:
 		event["params"] = {};
 
 	elif "source_dependency" in event["params"]:
 		event["params"]["source_dependency"]["type"] = constants["logSourceTypeMap"][event["params"]["source_dependency"]["type"]]
-
-	if "source" not in event:
-		print(event, "\nNetwork Log event does not have source key")
-		return
 
 	event["source"]["start_time"] = constants["timeTickOffset"] + int(event["source"]["start_time"])
 	event["source"]["type"] = constants["logSourceTypeMap"][event["source"]["type"]]
