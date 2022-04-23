@@ -58,6 +58,9 @@ def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True) -> 
 
 	paths = glob.glob(dir_path + "/*.json");
 
+	if len(paths) == 0:
+		return list();
+		
 	paths.sort(key = lambda fp : os.stat(fp).st_mtime, reverse = False);
 
 	file_paths = list();
