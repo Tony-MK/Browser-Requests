@@ -11,7 +11,7 @@ MEGA_BYTE = 1024 ** 2;
 
 CACHE_DURATION = 3000;
 
-BATCH_SIZE = MEGA_BYTE * 64;
+BATCH_SIZE = MEGA_BYTE * 32;
 
 TIME_ZONE = 10800 * int(10 ** 3);
 
@@ -61,7 +61,7 @@ def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True) -> 
 	if len(paths) == 0:
 		return list();
 		
-	paths.sort(key = lambda fp : os.stat(fp).st_mtime, reverse = False);
+	paths.sort(key = lambda fp : os.stat(fp).st_mtime, reverse = True);
 
 	file_paths = list();
 
@@ -262,8 +262,6 @@ async def read_log(file_path, profile) -> None:
 
 						if host not in profile.Hosts:
 							continue;
-						
-						#print(profile.Hosts[host], len(profile.Hosts[host].routes), _path.split("/"));
 
 						path = profile.Hosts[host].find(_path.split("/"));
 
@@ -288,7 +286,7 @@ async def read_log(file_path, profile) -> None:
 						};
 
 						sources[source_id] = path.methods[params["method"]];
-						#print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
+						print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
 						pass;
 
 						
