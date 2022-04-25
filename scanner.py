@@ -9,9 +9,9 @@ import os
 KILO_BYTE = 1024 ** 1;
 MEGA_BYTE = 1024 ** 2;
 
-CACHE_DURATION = 333 * 3;
+CACHE_DURATION = 3600 * .3;
 
-BATCH_SIZE = MEGA_BYTE * 96;
+BATCH_SIZE = MEGA_BYTE * 32;
 
 TIME_ZONE = 10800 * int(10 ** 1);
 
@@ -110,22 +110,12 @@ def handle_url_request(url_req : dict) -> None:
 	try:
 
 		req, resp = url_req["request"], url_req["response"];
+
 		query = url_req["path"].endpoints[req["method"]];
 
 		handler = getattr(url_req["path"].resource, query["handler"])
 		
-		try:
-
-			data = brotli.decompress(resp["encoded"].encode("UTF-8"));
-
-			handler(query['decoder'](base64.b64decode(data).decode('UTF-8', 'ignore')));
-			pass;
-		
-		except Exception:
-
-			handler(query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')));
-			pass;
-		
+		handler(query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')));
 			
 	except Exception as e:
 		pass;
@@ -191,7 +181,7 @@ async def read_log(file_path, profile) -> None:
 
 			buff = buff.split(",\n")
 			n_bytes = len(buff[-1]);
-			del buff[-1];
+			#del buff[-1];
 
 			for event in buff:
 				
@@ -208,7 +198,7 @@ async def read_log(file_path, profile) -> None:
 							continue;
 
 						elif event[0] != "{" or event[-1] != "}":
-							print("INVALID JSON STRING (%s bytes) : %s"%(len(event), event[:100]));
+							#print("INVALID JSON STRING (%s bytes) : %s"%(len(event), event[:100]));
 							running = True;
 							continue;
 
