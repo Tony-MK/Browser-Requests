@@ -9,7 +9,7 @@ import os
 KILO_BYTE = 1024 ** 1;
 MEGA_BYTE = 1024 ** 2;
 
-CACHE_DURATION = 3600 * .3;
+CACHE_DURATION = 3600;
 
 BATCH_SIZE = MEGA_BYTE * 32;
 
@@ -181,7 +181,7 @@ async def read_log(file_path, profile) -> None:
 
 			buff = buff.split(",\n")
 			n_bytes = len(buff[-1]);
-			#del buff[-1];
+			del buff[-1];
 
 			for event in buff:
 				
