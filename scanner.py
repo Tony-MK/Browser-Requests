@@ -1,46 +1,21 @@
 from datetime import datetime
 import base64
-import brotli;
 import asyncio
 import glob
 import json
 import os
 
-KILO_BYTE = 1024 ** 1;
-MEGA_BYTE = 1024 ** 2;
+KILO_BYTE : int = 1024
+MEGA_BYTE : int = 1024 ** 2;
 
-CACHE_DURATION = 3600 * 6;
+CACHE_DURATION : int = 3600;
 
-BATCH_SIZE = MEGA_BYTE * 32;
+BATCH_SIZE : int = MEGA_BYTE * 32
 
-TIME_ZONE = 10800 * int(10 ** 1);
+UTC_MS_DELTA : int = int(datetime.now().timestamp() - datetime.utcnow().timestamp()) * 1000
+print("TIMEZONE DELTA : ", UTC_MS_DELTA)
 
-IGNORE_EVENT_TYPES = [
-	"REQUEST_ALIVE",
-	"CREATED_BY",
-    "CHECK_CORS_PREFLIGHT_REQUIRED",
-    "CHECK_CORS_PREFLIGHT_CACHE",
-    "COMPUTED_PRIVACY_MODE",
-    "COOKIE_INCLUSION_STATUS" ,
-    "CORS_PREFLIGHT_RESULT",
-    "CORS_PREFLIGHT_CACHED_RESULT",
-    "DELEGATE_INFO",
-	"NETWORK_DELEGATE_BEFORE_START_TRANSACTION",
-    "HTTP_STREAM_JOB_BOUND_TO_REQUEST",
-    "HTTP2_SESSION_UPDATE_RECV_WINDOW",
-    "HTTP2_STREAM_UPDATE_RECV_WINDOW",
-    "HTTP2_SESSION_SEND_WINDOW_UPDATE",
-    "HTTP2_SESSION_RECV_DATA",
-    "HTTP2_SESSION_RECV_SETTING",
-    "HTTP_STREAM_JOB_CONTROLLER_BOUND" ,
-    "HTTP_STREAM_REQUEST_BOUND_TO_JOB",
-    "HTTP2_SESSION_POOL_FOUND_EXISTING_SESSION",
-    "HTTP_STREAM_REQUEST_STARTED_JOB",
-    "HTTP_STREAM_JOB_WAITING",
-    "HTTP_STREAM_JOB_CONTROLLER_PROXY_SERVER_RESOLVED",
-];
-
-file_stats = lambda file, file_path : "%.1f MB / %.1f MB  (%.3f%s) File : %s Last Update : %d secs ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file.name, datetime.now().timestamp() - os.stat(file_path).st_mtime)
+file_stats = lambda file, file_path : "%.1f MB / %.1f MB  (%.3f%s) File : %s modified : %d secs ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file.name, datetime.now().timestamp() - os.stat(file_path).st_mtime)
 
 
 def decode_headers(headers):
@@ -111,19 +86,24 @@ def handle_url_request(url_req : dict) -> None:
 
 		req, resp = url_req["request"], url_req["response"];
 
-		query = url_req["path"].endpoints[req["method"]];
+		if "settled" in url_req["path"].url:
+			print_data(resp["data"]);
+		try:
 
-		handler = getattr(url_req["path"].resource, query["handler"])
+			query = url_req["path"].endpoints[req["method"]];
+
+			getattr(url_req["path"].resource, query["handler"])(query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')));
 		
-		handler(query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')));
-			
+		except Exception as e:
+			pass;
+
 	except Exception as e:
-		pass;
-		#print(''.join(['-'] * 133));
-		#print_data(resp["data"]);
-		#print("%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
-		#print("Encoded: %d Headers : %d Data : %d"%(len(resp["encoded"]), len(resp["headers"]), len(resp["data"])));
-		#print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
+		
+		print(''.join(['-'] * 133));
+		print_data(resp["data"]);
+		print("%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
+		print("Encoded: %d Headers : %d Data : %d"%(len(resp["encoded"]), len(resp["headers"]), len(resp["data"])));
+		print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
 	
 def read_constants(file):
 
@@ -137,7 +117,7 @@ def read_constants(file):
 
 	constants["logEventTypesMap"] = {constants["logEventTypes"][c] : c  for c in constants["logEventTypes"]};
 
-	constants["timeTickOffset"] = int(constants["timeTickOffset"]) - TIME_ZONE;
+	constants["timeTickOffset"] = int(constants["timeTickOffset"]) - UTC_MS_DELTA;
 
 	return constants;
 
@@ -147,17 +127,24 @@ async def wait_for_events(nth_byte, file, file_path):
 	while nth_byte == os.stat(file_path).st_size:
 
 		if p%33 == 0:
-			print("Waiting : %s"%(file_stats(file, file_path)));
+			print("STANDBY - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)));
 
 		await asyncio.sleep(3);
-		p -= 1;
+		p += 1;
 
 
 async def read_log(file_path, profile) -> None:
 	
-	if MEGA_BYTE > os.stat(file_path).st_size:
-		print("SMALL LOG FILE : %d bytes %s"%(os.stat(file_path).st_size, file_path));
-		return;
+	
+
+	if KILO_BYTE > os.stat(file_path).st_size:
+
+		if datetime.now().timestamp() - os.stat(file_path).st_mtime > 90:
+			print("SMALL LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
+			return;
+		
+		await asyncio.sleep(30);
+		
 
 	with open(file_path, "r") as file:
 		
@@ -166,9 +153,11 @@ async def read_log(file_path, profile) -> None:
 		file.readline();
 		file.readline();
 		
-		nth_byte, n_bytes, nth_iteration, running  = file.tell(), 0, 0, True;
+		nth_byte, n_bytes, nth_iteration, running, buff  = file.tell(), 0, 0, True, list();
 
 		while running:
+
+			del buff;
 
 			nth_iteration += 1;
 
@@ -180,8 +169,8 @@ async def read_log(file_path, profile) -> None:
 			nth_byte += len(buff);
 
 			buff = buff.split(",\n")
-			n_bytes = len(buff[-1]);
-			del buff[-1];
+			#n_bytes = len(buff[-1]);
+			#del buff[-1];
 
 			for event in buff:
 				
@@ -261,7 +250,7 @@ async def read_log(file_path, profile) -> None:
 						elif path.resource == None:
 							#print("NO PATH FOUND FOR URL : %s %s%s/%s"%(params["method"], scheme, host,_path))
 							continue;
-
+						
 						elif params["method"] in path.methods:
 							for s_id in path.methods[params["method"]]["sources"]:
 								if s_id in sources:
@@ -310,12 +299,11 @@ async def read_log(file_path, profile) -> None:
 						handle_url_request(sources[source_id]);
 						del sources[source_id];
 
-			if nth_iteration%33 == 0:
+			if buff[-1][:-3] == "}}]":
+				break;
+
+			elif nth_iteration%33 == 0:
 				print("Reading : %s"%(file_stats(file, file_path)));
-
-			del buff;
-			pass;
-
 
 		print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
 		pass;
