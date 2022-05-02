@@ -8,7 +8,11 @@ import os
 KILO_BYTE : int = 1024
 MEGA_BYTE : int = 1024 ** 2;
 
-CACHE_DURATION : int = 3600 * 3;
+SCREEN_WIDTH = 150;
+
+DASH_LINE = ''.join(['-'] * SCREEN_WIDTH) + '\n';
+
+CACHE_DURATION : int = 3600;
 
 BATCH_SIZE : int = MEGA_BYTE * 32
 
@@ -101,13 +105,14 @@ def handle_url_request(url_req : dict) -> None:
 	
 	except Exception as e:
 		
-		if "/b" in url_req["path"].url and "/ba" not in url_req["path"].url:
+		if "/b" in url_req["path"].url and "/w" not in url_req["path"].url:
 
-			print(''.join(['-'] * 133));
-			print_data(resp["data"]);
-			print("%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
+			print(DASH_LINE + "%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
 			print("Encoded: %d Headers : %d Data : %d"%(len(resp["encoded"]), len(resp["headers"]), len(resp["data"])));
-			print("FAILED TO HANDLE RESPONSE %s\n"%(e) + ''.join(['-'] * 133), end = "\n\n");
+			print_data(resp["data"]);
+			print("FAILED TO HANDLE RESPONSE %s\n"%(e));
+			print(e.__traceback__.tb_frame.f_trace_lines)
+			print(DASH_LINE);
 	
 def read_constants(file):
 
