@@ -8,14 +8,14 @@ import os
 KILO_BYTE : int = 1024
 MEGA_BYTE : int = 1024 ** 2;
 
-CACHE_DURATION : int = 3600;
+CACHE_DURATION : int = 3600 * 3;
 
 BATCH_SIZE : int = MEGA_BYTE * 32
 
 UTC_MS_DELTA : int = int(datetime.now().timestamp() - datetime.utcnow().timestamp()) * 1000
 print("TIMEZONE DELTA : ", UTC_MS_DELTA)
 
-file_stats = lambda file, file_path : "%.1f MB / %.1f MB  (%.3f%s) File : %s modified : %d secs ago"%(file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , "%", file.name, datetime.now().timestamp() - os.stat(file_path).st_mtime)
+file_stats = lambda file, file_path : "%s (%d mins ago) %.1f/%.1f MB %.2f%%)"%(file.name.split("\\"), round(datetime.now().timestamp() - os.stat(file_path).st_mtime) * 60, file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 )
 
 
 def decode_headers(headers):
@@ -85,18 +85,10 @@ def handle_url_request(url_req : dict) -> None:
 	try:
 
 		req, resp = url_req["request"], url_req["response"];
+		query = url_req["path"].endpoints[req["method"]];
 
-		if "settled" in url_req["path"].url:
-			print_data(resp["data"]);
-		try:
-
-			query = url_req["path"].endpoints[req["method"]];
-
-			getattr(url_req["path"].resource, query["handler"])(query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')));
+		getattr(url_req["path"].resource, query["handler"])(query['decoder'](base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')));
 		
-		except Exception as e:
-			pass;
-
 	except Exception as e:
 		
 		print(''.join(['-'] * 133));
@@ -121,7 +113,7 @@ def read_constants(file):
 
 	return constants;
 
-async def wait_for_events(nth_byte, file, file_path):
+async def standby(nth_byte, file, file_path):
 
 	p = 0;
 	while nth_byte == os.stat(file_path).st_size:
@@ -161,7 +153,7 @@ async def read_log(file_path, profile) -> None:
 
 			nth_iteration += 1;
 
-			await wait_for_events(file = file, file_path = file_path, nth_byte = nth_byte)
+			await standby(file = file, file_path = file_path, nth_byte = nth_byte)
 
 			nth_byte = nth_byte - n_bytes;
 			file.seek(nth_byte, os.SEEK_SET);
