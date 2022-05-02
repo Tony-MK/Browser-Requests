@@ -18,9 +18,7 @@ class Route:
 
         if top != None:
             self.top.routes.append(self);
-            self.url = self.top.url  + "/" + self.name;
-            #print("Created Route :" + self.url, len(self.top.routes));
-            
+            self.url = self.top.url  + "/" + self.name;            
     
     def __str__(self) -> str:
         return "\n" + self.url + "\nRoutes : " + str(self.count()) + "\n".join([r.__str__() for r in self.routes]) + "\n";
@@ -36,14 +34,9 @@ class Route:
 
         return (route.add(routes[1:]))
 
-    def find_route(self, name : str) -> Any:
-        if name == self.name:
-            return self;
+    def count(self) -> int:
+        return len(self.routes) + sum([r.count() for r in self.routes])
 
-        for route in self.routes:
-            if route.name == name:
-                return route;
-    
     def find(self, routes : list) -> Any:
         route = self.find_route(routes[0]);
 
@@ -51,9 +44,17 @@ class Route:
             return (route.find(routes[1:]));
         
         return (route);
+
+    def find_route(self, name : str) -> Any:
+        if name == self.name:
+            return self;
+
+        for route in self.routes:
+            if route.name == name:
+                return route;
+
         
-    def count(self) -> int:
-        return len(self.routes) + sum([r.count() for r in self.routes])
+
 
         
             
