@@ -19,7 +19,7 @@ BATCH_SIZE : int = MEGA_BYTE * 32
 UTC_MS_DELTA : int = int(datetime.now().timestamp() - datetime.utcnow().timestamp()) * 1000
 print("TIMEZONE DELTA : ", UTC_MS_DELTA)
 
-file_stats = lambda file, file_path : "%s (%d mins ago) %.1f/%.1f MB %.2f%%)"%(file.name.split("\\"), round(datetime.now().timestamp() - os.stat(file_path).st_mtime) * 60, file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 )
+file_stats = lambda file, file_path : "%s (%d mins ago) %.1f/%.1f MB (%.2f%%)"%(file.name.split("\\")[-1], round(datetime.now().timestamp() - os.stat(file_path).st_mtime) * 60, file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 )
 
 
 def decode_headers(headers):
@@ -110,7 +110,7 @@ def handle_url_request(url_req : dict) -> None:
 			print(DASH_LINE + "%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
 			print("Encoded: %d Headers : %d Data : %d"%(len(resp["encoded"]), len(resp["headers"]), len(resp["data"])));
 			print_data(resp["data"]);
-			print("FAILED TO HANDLE RESPONSE %s\n"%(e));
+			print("FAILED TO HANDLE RESPONSE %s"%(e));
 			print(e.__traceback__.tb_frame.f_trace_lines)
 			print(DASH_LINE);
 	
