@@ -16,8 +16,8 @@ CACHE_DURATION : int = 3600;
 
 BATCH_SIZE : int = MEGA_BYTE * 32
 
-UTC_MS_DELTA : int = int(datetime.now().timestamp() - datetime.utcnow().timestamp()) * 1000
-print("TIMEZONE DELTA : ", UTC_MS_DELTA)
+UTC_DELTA : int = int(datetime.now().timestamp() - datetime.utcnow().timestamp()) * 1000
+print("SYSTEM TIMEZONE DIFFERENCE : ", UTC_DELTA)
 
 file_stats = lambda file, file_path : "%s (%d mins ago) %.1f/%.1f MB (%.2f%%)"%(file.name.split("\\")[-1], round(datetime.now().timestamp() - os.stat(file_path).st_mtime) * 60, file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 )
 
@@ -99,9 +99,6 @@ def handle_url_request(url_req : dict) -> None:
 
 		getattr(url_req["path"].resource, query["handler"])(query['decoder'](data));
 		pass;
-
-	except json.decoder.JSONDecodeError:
-		pass;
 	
 	except Exception as e:
 		
@@ -126,7 +123,7 @@ def read_constants(file):
 
 	constants["logEventTypesMap"] = {constants["logEventTypes"][c] : c  for c in constants["logEventTypes"]};
 
-	constants["timeTickOffset"] = int(constants["timeTickOffset"]) - UTC_MS_DELTA;
+	constants["timeTickOffset"] = int(constants["timeTickOffset"]) - UTC_DELTA;
 
 	return constants;
 
@@ -253,16 +250,16 @@ async def read_log(file_path, profile) -> None:
 
 							url = params["url"];
 
-							method = params["method"].lower()
-
 							scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:];
 
-							host, _path = url[:url.find('/')],  url[url.find('/') + 1:].split("?")[0];
+							host = url[:url.find('/')];
 
 							if host not in profile.Hosts:
 								continue;
 
-							path = profile.Hosts[host].find(_path.split("/"));
+							path = profile.Hosts[host].find(url[url.find('/') + 1:].split("?")[0].split("/"));
+
+							method = params["method"].lower();
 
 							if path == None or path.resource == None or method not in path.endpoints:
 								continue;

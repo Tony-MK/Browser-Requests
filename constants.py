@@ -23,3 +23,44 @@ IGNORE_EVENT_TYPES = [
     "HTTP_STREAM_JOB_WAITING",
     "HTTP_STREAM_JOB_CONTROLLER_PROXY_SERVER_RESOLVED",
 ];
+
+
+PARAMS = [
+    "initiator", 
+    "url", 
+    "method", 
+    "headers", 
+    "priority", 
+    "source_dependency", 
+    "address_list", 
+    "phase", 
+    "canonical_name", 
+    "local_address",
+    "time",
+    "pac_string",
+    "is_preconnect"
+];
+
+SOURCE_TYPES = {
+    1 : "URL_REQUEST",
+    8 : "SOCKET",
+    9 : "HTTP2_SESSION",
+    23 : "HTTP_STREAM_JOB_CONTROLLER",
+    15 : "HTTP_STREAM_JOB",
+
+};
+
+[
+    "URL_REQUEST_DELEGATE_CERTIFICATE_REQUESTED", # 108,
+    "URL_REQUEST_DELEGATE_RECEIVED_REDIRECT", # 109,
+    "URL_REQUEST_DELEGATE_RESPONSE_STARTED", # 110,
+    "URL_REQUEST_DELEGATE_SSL_CERTIFICATE_ERROR", # 111,
+    "URL_REQUEST_FAKE_RESPONSE_HEADERS_CREATED", # 117,
+    "URL_REQUEST_FILTERS_SET", # 118,
+    "URL_REQUEST_JOB_BYTES_READ", # 113,
+    "URL_REQUEST_JOB_FILTERED_BYTES_READ", # 114,
+    "URL_REQUEST_REDIRECTED", # 104,
+    "URL_REQUEST_REDIRECT_JOB", # 116,
+    "URL_REQUEST_SET_PRIORITY", # 115,
+    "URL_REQUEST_START_JOB", # 103,
+]
