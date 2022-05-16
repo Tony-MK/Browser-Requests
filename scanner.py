@@ -285,42 +285,37 @@ async def read_log(file_path, profile) -> None:
 							print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
 							pass;
 
-							
-					req, res = sources[source_id]["request"], sources[source_id]["response"];
-
 					if "headers" in params:
 
 						if event_type in ["HTTP2_SESSION_SEND_HEADERS", "CORS_REQUEST", "URL_REQUEST_START_JOB", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
-							req["headers"] = params["headers"];
+							sources[source_id]["request"]["headers"] = params["headers"];
 					
 						elif event_type in ["HTTP2_SESSION_RECV_HEADERS", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
-							res["headers"] = params["headers"];
+							sources[source_id]["response"]["headers"] = params["headers"];
 
 						else:
 
-							print("Debug - HEADERS: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
+							print("DEBUG - HEADERS: Unkwown event type %s from source type %s with parameters keys as (%s)"%(event_type, source_type, ",".join(params.keys())));
 
 					if "bytes" in params:
 
 						if event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ"]:
-							res["data"] += params["bytes"];
+							sources[source_id]["response"]["data"] += params["bytes"];
 
 						elif event_type in ["URL_REQUEST_JOB_BYTES_READ"]:
-							res["encoded"] +=  params["bytes"];
+							sources[source_id]["response"]["encoded"] +=  params["bytes"];
 							
 						else:
 
-							print("Debug - BYTES: Unkwown event type %s from source type %s with parameters (%s)"%(event_type, source_type, ",".join(params.keys())));
+							print("DEBUG - BYTES: Unkwown event type %s from source type %s with parameters keys as (%s)"%(event_type, source_type, ",".join(params.keys())));
 
-					if phase == "PHASE_END" and len(res["data"]) > 0:
+					if phase == "PHASE_END" and len(sources[source_id]["response"]["data"]) > 0:
 						handle_url_request(sources[source_id]);
-						del sources[source_id];
 
-				if buff[-1][:-3] == "}}]":
-					break;
-
-				elif nth_iteration%33 == 0:
-					print("Reading : %s"%(file_stats(file, file_path)));
+				if datetime.now().timestamp() - CACHE_DURATION > os.stat(file_path).st_mtime and nth_byte > os.stat(file_path).st_size -3:
+					print(buff[-3:]);
+					if buff[-1] == "":
+						break;
 
 			print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
 			pass;
