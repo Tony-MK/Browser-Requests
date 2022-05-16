@@ -12,7 +12,7 @@ SCREEN_WIDTH = 150;
 
 DASH_LINE = ''.join(['-'] * SCREEN_WIDTH) + '\n';
 
-CACHE_DURATION : int = 3600;
+CACHE_DURATION : int = 3600 / 3;
 
 BATCH_SIZE : int = MEGA_BYTE * 32
 
