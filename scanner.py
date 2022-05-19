@@ -17,7 +17,6 @@ CACHE_DURATION : int = 1800 ;
 BATCH_SIZE : int = MEGA_BYTE * 32
 
 UTC_DELTA : int = int(datetime.now().timestamp() - datetime.utcnow().timestamp()) * 1000
-print("SYSTEM TIMEZONE DIFFERENCE : ", UTC_DELTA)
 
 file_stats = lambda file, file_path : "%s (%d mins ago) %.1f/%.1f MB (%.2f%%)"%(file.name.split("\\")[-1], round(datetime.now().timestamp() - os.stat(file_path).st_mtime) * 60, file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 )
 
