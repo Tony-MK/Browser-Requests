@@ -59,11 +59,25 @@ def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True) -> 
 
 def map_event(event: dict, constants: dict) -> dict:
 
-	if "source" not in event:
-		print(event, "\nNetwork Log event does not have source key")
+	try:
+
+		event = json.loads(event);
+
+	except json.decoder.JSONDecodeError:
+
+		if len(event) == 0 or event[0] != "{" or event[-1] != "}":
+			#print("INVALID JSON STRING (%s bytes) : %s"%(len(event), event[:100]));
+			return;
+
+		event = json.loads(event[:-1]) if event[:-2] == '}]' and json.loads(event[:-3])
+		pass;
+
+	except json.JSONDecodeError as e:
+		print("EVENT DECODE ERROR - " + str(e) + '\n' + event, end = "\n\n");
 		return;
 
-	elif "params" not in event:
+
+	if "params" not in event:
 		event["params"] = {};
 
 	elif "source_dependency" in event["params"]:
@@ -71,10 +85,11 @@ def map_event(event: dict, constants: dict) -> dict:
 		event["params"]["source_dependency"]["id"] = int(event["params"]["source_dependency"]["id"]);
 
 
-	event["source"]["start_time"] = constants["timeTickOffset"] + int(event["source"]["start_time"])
-	event["source"]["type"] = constants["logSourceTypeMap"][event["source"]["type"]];
-	event["source"]["id"] = int(event["source"]["id"]);
-
+	event["source"] = {
+		"start_time" : constants["timeTickOffset"] + int(event["source"]["start_time"]),
+		"type" : constants["logSourceTypeMap"][event["source"]["type"]],
+		"id": int(event["source"]["id"])
+	}
 	event["time"] = constants["timeTickOffset"] + int(event["time"])
 	event["phase"] = constants["logEventPhaseMap"][event["phase"]]
 	event["type"]  = constants["logEventTypesMap"][event["type"]];
@@ -186,38 +201,6 @@ async def read_log(file_path, profile) -> None:
 
 				for event in buff:
 					
-					try:
-
-						event = json.loads(event);
-						running = True;
-
-					except json.decoder.JSONDecodeError:
-
-						try:
-
-							if len(event) == 0:
-								continue;
-
-							elif event[0] != "{" or event[-1] != "}":
-								#print("INVALID JSON STRING (%s bytes) : %s"%(len(event), event[:100]));
-								running = True;
-								continue;
-
-							elif event[:-2] == '}]':
-								event = json.loads(event[:-1]);
-								running = False;
-								pass;
-
-							else:
-
-								event = json.loads(event[:-3]);
-								running = True;
-								pass;
-
-						except json.JSONDecodeError as e:
-							print("EVENT DECODE ERROR - " + str(e) + '\n' + event, end = "\n\n");
-							continue;
-
 					event = map_event(event, constants);
 
 					if event == None or event["source"]["type"] in ["SOCKET"]: #"DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB":
