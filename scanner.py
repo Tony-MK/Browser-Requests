@@ -180,9 +180,9 @@ async def read_log(file_path, profile) -> None:
 			file.readline();
 			file.readline();
 			
-			nth_byte, n_bytes, nth_iteration, running, buff  = file.tell(), 0, 0, True, list();
+			nth_byte, n_bytes, nth_iteration, buff  = file.tell(), 0, 0, list();
 
-			while running:
+			while True:
 
 				del buff;
 
@@ -196,7 +196,7 @@ async def read_log(file_path, profile) -> None:
 				nth_byte += len(buff);
 
 				buff = buff.split(",\n")
-				#n_bytes = len(buff[-1]);
+				n_bytes = len(buff[-1]);
 				#del buff[-1];
 
 				for event in buff:
@@ -293,13 +293,10 @@ async def read_log(file_path, profile) -> None:
 					if phase == "PHASE_END" and len(sources[source_id]["response"]["data"]) > 0:
 						handle_url_request(sources[source_id]);
 
-				if datetime.now().timestamp() - CACHE_DURATION > os.stat(file_path).st_mtime and nth_byte > os.stat(file_path).st_size -3:
+				if datetime.now().timestamp() - CACHE_DURATION > os.stat(file_path).st_mtime and nth_byte > os.stat(file_path).st_size - 3:
 					print(buff[-3:]);
 					if buff[-1] == "":
+						print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
 						break;
-
-			print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
-			pass;
-
 		
 				
