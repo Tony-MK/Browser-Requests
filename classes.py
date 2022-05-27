@@ -53,10 +53,5 @@ class Route:
             if route.name == name:
                 return route;
 
-        
-
-
-        
-            
 class Host(Route):
     pass;

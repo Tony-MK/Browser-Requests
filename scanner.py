@@ -20,6 +20,10 @@ UTC_DELTA : int = int(datetime.now().timestamp() - datetime.utcnow().timestamp()
 
 file_stats = lambda file, file_path : "%s (%d mins ago) %.1f/%.1f MB (%.2f%%)"%(file.name.split("\\")[-1], round(datetime.now().timestamp() - os.stat(file_path).st_mtime) * 60, file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 )
 
+IGNORE_SOURCE_TYPES = [
+	8 # SOCKET
+];
+
 def decode_headers(headers):
 
 	if len(headers) == 1:
@@ -29,7 +33,7 @@ def decode_headers(headers):
 	if headers[0].find("HTTP") != -1:
 		headers[0] = "version: " + headers[0];
 	
-	return { header.split(': ')[0] : header.split(': ')[1] for header in headers };
+	return dict(tuple(map(lambda header : header.split(': '), headers)));
 
 def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True) -> list:
 
@@ -69,7 +73,7 @@ def map_event(event: dict, constants: dict) -> dict:
 			#print("INVALID JSON STRING (%s bytes) : %s"%(len(event), event[:100]));
 			return;
 
-		event = json.loads(event[:-1]) if event[:-2] == '}]' and json.loads(event[:-3])
+		event = json.loads(event[:-1 if event[:-2] == '}]' else 3])
 		pass;
 
 	except json.JSONDecodeError as e:
@@ -77,7 +81,10 @@ def map_event(event: dict, constants: dict) -> dict:
 		return;
 
 
-	if "params" not in event:
+	if event["source"]["type"] in IGNORE_SOURCE_TYPES:
+		return;
+
+	elif "params" not in event:
 		event["params"] = {};
 
 	elif "source_dependency" in event["params"]:
@@ -203,16 +210,14 @@ async def read_log(file_path, profile) -> None:
 					
 					event = map_event(event, constants);
 
-					if event == None or event["source"]["type"] in ["SOCKET"]: #"DISK_CACHE_ENTRY", "NETWORK_QUALITY_ESTIMATOR", "NONE", "PAC_FILE_DECIDER", "CERT_VERIFIER_JOB":
+					if event == None:
 						continue;
 
 					source_id, source_type = event["source"]["id"], event["source"]["type"]; del event["source"];
-
 					event_type = event["type"]; del event["type"];
 					params = event["params"]; del event["params"];
 					phase = event["phase"]; del event["phase"];
 					_ = event["time"]; del event["time"];
-					assert len(event) == 0, str(event.keys());
 					del event;
 
 					if source_id not in sources:
@@ -221,10 +226,11 @@ async def read_log(file_path, profile) -> None:
 							sources[source_id] = sources[params["source_dependency"]["id"]];
 
 							# Adding to sources set
-							sources[source_id]["sources"].add(source_id)
+							sources[source_id]["sources"].add(source_id);
+
 						
 						elif "url" not in params or "method" not in params:
-							#print(event["source"]["type"], "Source Id Not Found : ", event["type"], event.keys(), event["params"].keys(), end = "\n");
+							print("%s - Source Id %d was not Found : %s"%(event_type, source_id, params.keys()), end = "\n");
 							continue;
 
 						else:
@@ -250,6 +256,8 @@ async def read_log(file_path, profile) -> None:
 									for s_id in path.methods[params["method"]][url]["sources"]:
 										if s_id in sources:
 											del sources[s_id];
+
+									del path.methods[params["method"]][url];
 				
 							path.methods[params["method"]] = {
 								url : 
@@ -258,6 +266,7 @@ async def read_log(file_path, profile) -> None:
 									"response" : { "headers" : "", "data" : "", "encoded" : "" },
 									"source_id" : source_id,
 									"sources" : set([source_id]),
+									"scheme" : scheme,
 									"path" : path,
 								},
 							};
