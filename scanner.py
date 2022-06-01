@@ -1,4 +1,5 @@
 from datetime import datetime
+import traceback
 import base64
 import asyncio
 import glob
@@ -123,7 +124,7 @@ def handle_url_request(url_req : dict) -> None:
 	except Exception as e:
 		
 		if "/b" in url_req["path"].url and "/w" not in url_req["path"].url:
-
+			traceback.print_exc();
 			print(DASHED_LINE + "%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
 			print("Encoded: %d Headers : %d Data : %d"%(len(resp["encoded"]), len(resp["headers"]), len(resp["data"])));
 			print_data(resp["data"]);
@@ -158,20 +159,22 @@ async def standby(nth_byte, file, file_path):
 		await asyncio.sleep(3);
 		p += 1;
 
+async def valiadat_log(file_path):
 
-async def read_log(file_path, profile) -> None:
-	
-	
 	while MEGA_BYTE > os.stat(file_path).st_size:
 
 		if datetime.now().timestamp() - os.stat(file_path).st_mtime > 300:
 			print("SMALL LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
-			return;
+			return False;
 		
-		print("NEW LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
+		print("AWAIT NEW LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
 		await asyncio.sleep(30);
-		
 
+async def read_log(file_path, profile) -> None:
+	
+	if await valiadat_log(file_path) == False:
+		return;
+	
 	with open(file_path, "r") as file:
 		
 		try:
@@ -204,7 +207,6 @@ async def read_log(file_path, profile) -> None:
 
 				buff = buff.split(",\n")
 				n_bytes = len(buff[-1]);
-				#del buff[-1];
 
 				for event in buff:
 					
@@ -230,7 +232,7 @@ async def read_log(file_path, profile) -> None:
 
 						
 						elif "url" not in params or "method" not in params:
-							print("%s - Source Id %d was not Found : %s"%(event_type, source_id, params.keys()), end = "\n");
+							#print("%s - Source Id %d was not Found : %s"%(event_type, source_id, params.keys()), end = "\n");
 							continue;
 
 						else:
