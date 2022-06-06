@@ -13,9 +13,9 @@ SCREEN_WIDTH = 150;
 
 DASHED_LINE = ''.join(['-'] * SCREEN_WIDTH) + '\n';
 
-CACHE_DURATION : int = 7200 ;
+CACHE_DURATION : int = 1800 ;
 
-BATCH_SIZE : int = MEGA_BYTE * 32
+BLOCK_SIZE : int = MEGA_BYTE * 32
 
 UTC_DELTA : int = int(datetime.now().timestamp() - datetime.utcnow().timestamp()) * 1000
 
@@ -202,7 +202,7 @@ async def read_log(file_path, profile) -> None:
 
 				nth_byte = nth_byte - n_bytes;
 				file.seek(nth_byte, os.SEEK_SET);
-				buff = file.read(BATCH_SIZE);
+				buff = file.read(BLOCK_SIZE);
 				nth_byte += len(buff);
 
 				buff = buff.split(",\n")
