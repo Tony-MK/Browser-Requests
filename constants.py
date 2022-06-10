@@ -23,6 +23,9 @@ IGNORE_EVENT_TYPES = [
     "HTTP_STREAM_JOB_CONTROLLER_PROXY_SERVER_RESOLVED",
 ];
 
+IGNORE_SOURCE_TYPES = [
+    8 # SOCKET
+]
 
 PARAMS = [
     "initiator", 
@@ -46,14 +49,11 @@ SOURCE_TYPES = {
     9 : "HTTP2_SESSION",
     23 : "HTTP_STREAM_JOB_CONTROLLER",
     15 : "HTTP_STREAM_JOB",
-    """
-    ? : "NETWORK_QUALITY_ESTIMATOR",
-    ? : "DISK_CACHE_ENTRY",
-    ? : "NONE", 
-    ? : "PAC_FILE_DECIDER", 
-    ? : "CERT_VERIFIER_JOB"
-    """
-
+#   ?? : "NETWORK_QUALITY_ESTIMATOR",
+#   ?? : "DISK_CACHE_ENTRY",
+#   ?? : "NONE", 
+#   ?? : "PAC_FILE_DECIDER", 
+#   ?? : "CERT_VERIFIER_JOB"
 };
 
 [

@@ -6,6 +6,8 @@ import glob
 import json
 import os
 
+decode = __import__("decode")
+
 KILO_BYTE : int = 1024
 MEGA_BYTE : int = 1024 ** 2;
 
@@ -24,17 +26,6 @@ file_stats = lambda file, file_path : "%s (%d mins ago) %.1f/%.1f MB (%.2f%%)"%(
 IGNORE_SOURCE_TYPES = [
 	8 # SOCKET
 ];
-
-def decode_headers(headers):
-
-	if len(headers) == 1:
-		headers = headers[0];
-		pass;
-
-	if headers[0].find("HTTP") != -1:
-		headers[0] = "version: " + headers[0];
-	
-	return dict(tuple(map(lambda header : header.split(': '), headers)));
 
 def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True) -> list:
 
@@ -62,76 +53,64 @@ def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True) -> 
 
 	return file_paths;
 
-def map_event(event: dict, constants: dict) -> dict:
 
-	try:
-
-		event = json.loads(event);
-
-	except json.decoder.JSONDecodeError:
-
-		if len(event) == 0 or event[0] != "{" or event[-1] != "}":
-			#print("INVALID JSON STRING (%s bytes) : %s"%(len(event), event[:100]));
-			return;
-
-		event = json.loads(event[:-1 if event[:-2] == '}]' else 3])
-		pass;
-
-	except json.JSONDecodeError as e:
-		print("EVENT DECODE ERROR - " + str(e) + '\n' + event, end = "\n\n");
-		return;
-
-
-	if event["source"]["type"] in IGNORE_SOURCE_TYPES:
-		return;
-
-	elif "params" not in event:
-		event["params"] = {};
-
-	elif "source_dependency" in event["params"]:
-		event["params"]["source_dependency"]["type"] = constants["logSourceTypeMap"][event["params"]["source_dependency"]["type"]];
-		event["params"]["source_dependency"]["id"] = int(event["params"]["source_dependency"]["id"]);
-
-
-	event["source"] = {
-		"start_time" : constants["timeTickOffset"] + int(event["source"]["start_time"]),
-		"type" : constants["logSourceTypeMap"][event["source"]["type"]],
-		"id": int(event["source"]["id"])
-	}
-	event["time"] = constants["timeTickOffset"] + int(event["time"])
-	event["phase"] = constants["logEventPhaseMap"][event["phase"]]
-	event["type"]  = constants["logEventTypesMap"][event["type"]];
-	return event;
-
-
-def print_data(data : str, n = 100) -> None:
-	n = int(n/2);
-	return data[:n] + "\n" + "".join(["...."] * 25) + "\n" + data[-n:] if len(data) > n else data;
+def print_data(data: str, n_bytes = 100) -> None:
+	return data if n_bytes > len(data) else data[:n_bytes] + "\n" + ".".join([""] * n_bytes) + "\n" + data[-n_bytes:];
 
 
 def handle_url_request(url_req : dict) -> None:
 		
 	try:
 
-		req, resp = url_req["request"], url_req["response"];
-		query = url_req["path"].endpoints[req["method"]];
-
-		data = base64.b64decode(resp["data"]).decode('UTF-8', 'ignore')
-
-		getattr(url_req["path"].resource, query["handler"])(query['decoder'](data));
-		pass;
-	
-	except Exception as e:
 		
+		query = url_req["path"].endpoints[url_req["request"]["method"]];
+
+		getattr(
+			url_req["path"].resource, 
+			query["handler"])(
+				query['decoder'](
+					base64.b64decode(url_req["response"]["data"]).decode('UTF-8', 'ignore')
+				)
+		);
+	
+	except json.decoder.JSONDecodeError as e:
+		pass;
+
+	except Exception as e:
+	
 		if "/b" in url_req["path"].url and "/w" not in url_req["path"].url:
-			traceback.print_exc();
+			req, resp = url_req["request"], url_req["response"];
 			print(DASHED_LINE + "%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
 			print("Encoded: %d Headers : %d Data : %d"%(len(resp["encoded"]), len(resp["headers"]), len(resp["data"])));
 			print_data(resp["data"]);
-			print("FAILED TO HANDLE RESPONSE %s"%(e));
-			print(e.__traceback__.tb_frame.f_trace_lines)
+			print("FAILED TO HANDLE RESPONSE %s\n"%(e));
+			traceback.print_exc()
 			print(DASHED_LINE);
 	
+
+
+async def standby(nth_byte, file, file_path):
+
+	p = 0;
+	while nth_byte == os.stat(file_path).st_size:
+
+		if p%33 == 0:
+			print("STANDBY - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)));
+
+		await asyncio.sleep(3);
+		p += 1;
+
+async def valiadate_log(file_path):
+
+	while MEGA_BYTE > os.stat(file_path).st_size:
+
+		if datetime.now().timestamp() - os.stat(file_path).st_mtime > 300:
+			print("SMALL LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
+			return False;
+		
+		print("AWAIT NEW LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
+		await asyncio.sleep(30);
+
 def read_constants(file):
 
 	constants = file.readline();
@@ -148,31 +127,9 @@ def read_constants(file):
 
 	return constants;
 
-async def standby(nth_byte, file, file_path):
-
-	p = 0;
-	while nth_byte == os.stat(file_path).st_size:
-
-		if p%33 == 0:
-			print("STANDBY - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)));
-
-		await asyncio.sleep(3);
-		p += 1;
-
-async def valiadat_log(file_path):
-
-	while MEGA_BYTE > os.stat(file_path).st_size:
-
-		if datetime.now().timestamp() - os.stat(file_path).st_mtime > 300:
-			print("SMALL LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
-			return False;
-		
-		print("AWAIT NEW LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
-		await asyncio.sleep(30);
-
 async def read_log(file_path, profile) -> None:
 	
-	if await valiadat_log(file_path) == False:
+	if await valiadate_log(file_path) == False:
 		return;
 	
 	with open(file_path, "r") as file:
@@ -210,7 +167,7 @@ async def read_log(file_path, profile) -> None:
 
 				for event in buff:
 					
-					event = map_event(event, constants);
+					event = decode.decode_event(event, constants);
 
 					if event == None:
 						continue;
