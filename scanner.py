@@ -8,12 +8,13 @@ import os
 
 decode = __import__("decode")
 
+
 KILO_BYTE : int = 1024
 MEGA_BYTE : int = 1024 ** 2;
 
 SCREEN_WIDTH = 150;
 
-DASHED_LINE = ''.join(['-'] * SCREEN_WIDTH) + '\n';
+DASHED_LINE = '-'.join([''] * SCREEN_WIDTH) + "\n";
 
 CACHE_DURATION : int = 1800 ;
 
@@ -27,34 +28,28 @@ IGNORE_SOURCE_TYPES = [
 	8 # SOCKET
 ];
 
-def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True) -> list:
 
-	paths = glob.glob(dir_path + "/*.json");
+def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True, n_file_paths = 9999) -> list:
 
-	if len(paths) == 0:
-		return list();
+	file_paths = glob.glob(dir_path + "/*.json");
+
+	if len(file_paths) == 0:
+		return file_paths;
 		
-	paths.sort(key = lambda fp : os.stat(fp).st_mtime, reverse = True);
+	file_paths.sort(key = lambda file_path : os.stat(file_path).st_mtime , reverse = True);
 
-	file_paths = list();
+	min_mtime =  datetime.now().timestamp() - modified 
 
-	if latest == True:
-		file_paths.append(paths[0]);
-		del paths[0];
+	if os.stat(file_paths[0]).st_mtime > min_mtime:
+		return [
+			file_path 
+			for file_path in file_paths[-n_file_paths:] if os.stat(file_path).st_mtime > min_mtime
+		]
 
-	start = datetime.now().timestamp() - CACHE_DURATION;
-
-	for file_path in paths:
-
-		if start > os.stat(file_path).st_mtime:
-			break;
-
-		file_paths.append(file_path);
-
-	return file_paths;
+	return file_paths[:1]
 
 
-def print_data(data: str, n_bytes = 100) -> None:
+def data_to_str(data: str, n_bytes = 100) -> None:
 	return data if n_bytes > len(data) else data[:n_bytes] + "\n" + ".".join([""] * n_bytes) + "\n" + data[-n_bytes:];
 
 
@@ -79,28 +74,32 @@ def handle_url_request(url_req : dict) -> None:
 	except Exception as e:
 	
 		if "/b" in url_req["path"].url and "/w" not in url_req["path"].url:
-			req, resp = url_req["request"], url_req["response"];
-			print(DASHED_LINE + "%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ');
-			print("Encoded: %d Headers : %d Data : %d"%(len(resp["encoded"]), len(resp["headers"]), len(resp["data"])));
-			print_data(resp["data"]);
+			req, resp = url_req["request"], url_req["response"]
+			print(DASHED_LINE + "%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ')
+			print("Encoded: {:d} Headers : {:d} Data : {:d}".format(len(resp["encoded"]), len(resp["headers"]), len(resp["data"])))
+			print(data_to_str(resp["data"]))
 			print("FAILED TO HANDLE RESPONSE %s\n"%(e));
 			traceback.print_exc()
 			print(DASHED_LINE);
 	
 
 
-async def standby(nth_byte, file, file_path):
+async def standby(nth_byte: int, file, file_path: str, sleep_duration = 3, wait_duration = 300) -> None:
 
-	p = 0;
-	while nth_byte == os.stat(file_path).st_size:
 
-		if p%33 == 0:
+	for duration in range(0, wait_duration, sleep_duration):
+		
+		if os.stat(file_path).st_size != nth_byte:
+			return;
+
+		elif duration%sleep_duration == 0:
+
 			print("STANDBY - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)));
 
-		await asyncio.sleep(3);
-		p += 1;
+		await asyncio.sleep(sleep_duration);
 
-async def valiadate_log(file_path):
+
+async def valiadate_log(file_path : str):
 
 	while MEGA_BYTE > os.stat(file_path).st_size:
 
@@ -109,7 +108,7 @@ async def valiadate_log(file_path):
 			return False;
 		
 		print("AWAIT NEW LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
-		await asyncio.sleep(30);
+		await asyncio.sleep(3);
 
 def read_constants(file):
 
