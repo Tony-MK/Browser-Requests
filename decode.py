@@ -1,6 +1,9 @@
 import json
 
-IGNORE_SOURCE_TYPES = __import__('constants').IGNORE_SOURCE_TYPES
+#IGNORE_SOURCE_TYPES = __import__('constants').IGNORE_SOURCE_TYPES
+IGNORE_SOURCE_TYPES = [
+    8 # SOCKET
+]
 
 def decode_event(event: dict, constants: dict) -> dict:
 
