@@ -16,7 +16,7 @@ SCREEN_WIDTH = 150;
 
 DASHED_LINE = '-'.join([''] * SCREEN_WIDTH) + "\n";
 
-CACHE_DURATION : int = 1800 ;
+CACHE_DURATION : int = 3600 ;
 
 BLOCK_SIZE : int = MEGA_BYTE * 32
 
@@ -42,7 +42,7 @@ def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True, n_f
 
 	if os.stat(file_paths[0]).st_mtime > min_mtime:
 		return [
-			file_path 
+			file_path
 			for file_path in file_paths[-n_file_paths:] if os.stat(file_path).st_mtime > min_mtime
 		]
 
@@ -260,10 +260,8 @@ async def read_log(file_path, profile) -> None:
 					if phase == "PHASE_END" and len(sources[source_id]["response"]["data"]) > 0:
 						handle_url_request(sources[source_id]);
 
-				if datetime.now().timestamp() - CACHE_DURATION > os.stat(file_path).st_mtime and nth_byte > os.stat(file_path).st_size - 3:
-					print(buff[-3:]);
-					if buff[-1] == "":
-						print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
-						break;
+				if datetime.now().timestamp() - CACHE_DURATION > os.stat(file_path).st_mtime and nth_byte > os.stat(file_path).st_size - 30 and buff[-1] == "":
+					print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
+					break;
 		
 				
