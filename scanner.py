@@ -1,205 +1,269 @@
-from datetime import datetime;
-import glob;
-import time;
-import json;
-import os;
+from datetime import datetime
+import traceback
+import base64
+import asyncio
+import glob
+import json
+import os
 
+decode = __import__("decode")
 
 
-KILO_BYTE = 2 ** 10;
-MEGA_BYTE = 2 ** 20;
-GIGA_BYTE = 2 ** 30;
+KILO_BYTE : int = 1024
+MEGA_BYTE : int = 1024 ** 2;
 
-BATCH_SIZE = MEGA_BYTE * 4;
+SCREEN_WIDTH = 150;
 
-TIME_ZONE = 10800 * int(10 ** 3);
+DASHED_LINE = '-'.join([''] * SCREEN_WIDTH) + "\n";
 
+CACHE_DURATION : int = 900 ;
 
+BLOCK_SIZE : int = MEGA_BYTE * 32
 
-def save(sources):
+UTC_DELTA : int = int(datetime.now().timestamp() - datetime.utcnow().timestamp()) * 1000
 
-    for source in sources.values():
+file_stats = lambda file, file_path : "%s (%d mins ago) %.1f/%.1f MB (%.2f%%)"%(file.name.split("\\")[-1], round(datetime.now().timestamp() - os.stat(file_path).st_mtime) / 60, file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 )
 
-        source['dir'] = './logs/%s/%s'%(event['source']['type'], event['params']['url'].replace(':/','').split('?')[0].split('#')[0]);
+IGNORE_SOURCE_TYPES = [
+	8 # SOCKET
+];
 
-        if os.path.exists(source['dir']) == False:
-            create_dir(path = source['dir']);
-            pass
 
-        with open('%s/%s.json'%(source['dir'], source['name']), mode = 'w') as file:
-            json.dump(source['events'], file, indent = 3)
-            pass;
+def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True, n_file_paths = 9999) -> list:
 
+	file_paths = glob.glob(dir_path + "/*.json");
 
-def scan(file_path):
+	if len(file_paths) == 0:
+		return file_paths;
+		
+	file_paths.sort(key = lambda file_path : os.stat(file_path).st_mtime , reverse = True);
 
-    with open(file_path, 'r') as file:
+	min_mtime =  datetime.now().timestamp() - modified 
 
-        lines = file.read(BATCH_SIZE).split(',\n');
-        file.seek(file.tell() - len(lines[-1]));
-        del lines[-1];
-            
-        constants =  json.loads(lines[0].strip(',\n') + '}')['constants'];
+	if os.stat(file_paths[0]).st_mtime > min_mtime:
+		return [
+			file_path
+			for file_path in file_paths[-n_file_paths:] if os.stat(file_path).st_mtime > min_mtime
+		]
 
-        del lines[0];
+	return file_paths[:1]
 
-        constants['timeTickOffset'] = int(constants['timeTickOffset']) - TIME_ZONE;
 
-        constants['logEventPhaseMap'] = {constants['logEventPhase'][c] : c  for c in constants['logEventPhase']};
+def data_to_str(data: str, n_bytes = 100) -> None:
+	return data if n_bytes > len(data) else data[:n_bytes] + "\n" + ".".join([""] * n_bytes) + "\n" + data[-n_bytes:];
 
-        constants['logSourceTypeMap'] = {constants['logSourceType'][c] : c  for c in constants['logSourceType']};
 
-        constants['logEventTypesMap'] = {constants['logEventTypes'][c] : c  for c in constants['logEventTypes']};
+def handle_url_request(url_req : dict) -> None:
+		
+	try:
 
-        yield constants;
+		query = url_req["path"].endpoints[url_req["request"]["method"]];
 
-        lines[0] = lines[0].split('\n')[-1];
+		getattr(
+			url_req["path"].resource, 
+			query["handler"])(
+				query['decoder'](
+					base64.b64decode(url_req["response"]["data"]).decode('UTF-8', 'ignore')
+				)
+		);
+	
+	except json.decoder.JSONDecodeError as e:
+		pass;
 
-        while True:
+	except Exception as e:
+	
+		if "/b" in url_req["path"].url and "/w" not in url_req["path"].url:
+			req, resp = url_req["request"], url_req["response"]
+			print(DASHED_LINE + "%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ')
+			print("Encoded: {:d} Headers : {:d} Data : {:d}".format(len(resp["encoded"]), len(resp["headers"]), len(resp["data"])))
+			print(data_to_str(resp["data"]))
+			print("FAILED TO HANDLE RESPONSE %s\n"%(e));
+			traceback.print_exc()
+			print(DASHED_LINE);
+	
 
-            print('Scan network events log file. Scanned : %.3f GB / %.3f GB  (%.3f%s) Path : %s'%( file.tell() / GIGA_BYTE, os.stat(file_path).st_size / GIGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 , '%', file_path));
 
-            for line in lines:
+async def standby(nth_byte: int, file, file_path: str, sleep_duration = 3, wait_duration = 300) -> None:
 
-                try:
-                    
-                    yield json.loads(line.strip(',\n'));
+	if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
+		print("EXPIRED - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)));
+		return True;
 
-                except json.decoder.JSONDecodeError as e:
-                    print(line);
-                    raise e;
+	for duration in range(0, wait_duration, sleep_duration):
+		
+		if os.stat(file_path).st_size != nth_byte:
+			return;
 
+		elif duration%sleep_duration == 0:
 
-            while round(file.tell() / os.stat(file_path).st_size, 3) == 1:
-                print('Awaiting log change....', end = '\r')
-                time.sleep(.3);
-                pass;
+			print("STANDBY - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)));
+			await asyncio.sleep(sleep_duration);
 
-            lines = file.read(BATCH_SIZE).split(',\n');
-            file.seek(file.tell() - len(lines[-1]));
-            del lines[-1];
-            
 
-def read_line(reader):
-    for line in reader:
-        return line;
-            
+async def valiadate_log(file_path : str):
 
-def create_dir(path):
+	while MEGA_BYTE > os.stat(file_path).st_size:
 
-    levels = path.split('/');
+		if datetime.now().timestamp() - os.stat(file_path).st_mtime > 300:
+			print("SMALL LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
+			return False;
+		
+		print("AWAIT NEW LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
+		await asyncio.sleep(3);
 
-    for level in range(2, len(levels) + 1):
+def read_constants(file):
 
-        path = '/'.join(levels[:level]);
+	constants = file.readline();
 
-        if os.path.exists(path) == False:
+	constants = json.loads(constants.strip(",\n") + "}" )["constants"];
 
-            print(level,' Created %s Directory...'%(path));
-            os.mkdir(path);
-            pass;
+	constants["logEventPhaseMap"] = {constants["logEventPhase"][c] : c  for c in constants["logEventPhase"]};
 
+	constants["logSourceTypeMap"] = {constants["logSourceType"][c] : c  for c in constants["logSourceType"]};
 
+	constants["logEventTypesMap"] = {constants["logEventTypes"][c] : c  for c in constants["logEventTypes"]};
 
-def read(file_path):
+	constants["timeTickOffset"] = int(constants["timeTickOffset"]) - UTC_DELTA;
 
-    reader = scan(file_path);
+	return constants;
 
-    constants = next(reader);
+async def read_log(file_path, profile) -> None:
+	
+	if await valiadate_log(file_path) == False:
+		return;
+	
+	with open(file_path, "r") as file:
+		
+		try:
 
-    for event in reader:
+			constants, sources = read_constants(file), dict();
 
-        if 'params' in event:
+		except json.decoder.JSONDecodeError:
+			print("\n\nCONSTANTS DECODE ERROR : %s\n\n"%(file_stats(file, file_path)));
+			pass;
 
-            if 'source_dependency' in event:
-                event['source_dependency']['type'] = constants['logSourceTypeMap'][event['source_dependency']['type']]
+		else:
+	
+			file.readline();
+			file.readline();
+			
+			nth_byte, n_bytes, nth_iteration, buff  = file.tell(), 0, 0, list();
 
-            event['source']['type'] = constants['logSourceTypeMap'][event['source']['type']]
-            event['source']['start_time'] = constants['timeTickOffset'] + int(event['source']['start_time']);
-            event['time'] = constants['timeTickOffset'] + int(event['time'])
-            event['phase'] = constants['logEventPhaseMap'][event['phase']];
-            event['type']  = constants['logEventTypesMap'][event['type']];
-            yield event;
+			while True:
 
-       
+				del buff;
 
-def scan_hosts(dir_path, hosts):
+				nth_iteration += 1;
 
-    sources = dict();
+				if await standby(file = file, file_path = file_path, nth_byte = nth_byte):
+					print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
+					break;
 
-    urls = dict();
 
-    file_paths = glob.glob(dir_path + '/*.json');
+				nth_byte = nth_byte - n_bytes;
+				file.seek(nth_byte, os.SEEK_SET);
+				buff = file.read(BLOCK_SIZE);
+				nth_byte += len(buff);
 
-    print('Scanning ' + str(len(file_paths))  + ' Network Logs | ' + dir_path + '\nReading ' + str(file_paths[-1])  + '......')
+				buff = buff.split(",\n")
+				n_bytes = len(buff[-1]);
 
-    for event in read(file_paths[-1]):
+				for event in buff:
+					
+					event = decode.decode_event(event, constants);
 
-        if 'HTTP' not in event['source']['type'] and 'URL' not in event['source']['type']:
-            continue;
+					if event == None:
+						continue;
 
-        elif event['source']['id'] in sources:
-            urls[sources[event['source']['id']]]['event'] = event; 
-            urls[sources[event['source']['id']]]['events'][-1].append(event);
-            pass;
+					source_id, source_type = event["source"]["id"], event["source"]["type"]; del event["source"];
+					event_type = event["type"]; del event["type"];
+					params = event["params"]; del event["params"];
+					phase = event["phase"]; del event["phase"];
+					_ = event["time"]; del event["time"];
+					del event;
 
-        if 'source_dependency' in event['params'] and event['params']['source_dependency']['id'] in sources:
+					if source_id not in sources:
 
-            sources[event['source']['id']] = sources[event['params']['source_dependency']['id']];
-            urls[sources[event['source']['id']]]['event'] = event; 
-            urls[sources[event['source']['id']]]['events'][-1].append(event);
-            pass;
+						if "source_dependency" in params and params["source_dependency"]["id"] in sources:
+							sources[source_id] = sources[params["source_dependency"]["id"]];
 
-        elif set(['url', 'method']).is_subset(set(event['params'].keys())):
+							# Adding to sources set
+							sources[source_id]["sources"].add(source_id);
 
-            for host in hosts:
+						
+						elif "url" not in params or "method" not in params:
+							#print("%s - Source Id %d was not Found : %s"%(event_type, source_id, params.keys()), end = "\n");
+							continue;
 
-                if host in event['params']['url']:
+						else:
 
-                    for route in hosts[host]:
+							url = params["url"];
 
-                        if route['route'] in event['params']['url'] and route['cache'] > datetime.utcnow().timestamp() - event['source']['start_time']:
+							scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:];
 
-                            sources[event['source']['id']] = event['params']['url'];
+							host = url[:url.find('/')];
 
-                            if event['params']['url'] in urls:
-                                urls[sources[event['source']['id']]]['event'] = event; 
-                                urls[event['params']['url']]['events'].append([event]);
-                                print(len(urls[sources[event['source']['id']]]['events']), ' New Endpoint Request: ' + sources[event['source']['id']]);
-                            
-                            else:
+							if host not in profile.Hosts:
+								continue;
 
-                                urls[event['params']['url']] = {
-                                    'event' : event,
-                                    'events' : [[event]],
-                                };
+							path = profile.Hosts[host].find(url[url.find('/') + 1:].split("?")[0].split("/"));
 
-                                print(len(urls), ' New Endpoint: ' + sources[event['source']['id']]);
+							method = params["method"].lower();
 
-                            break;
+							if path == None or path.resource == None or method not in path.endpoints:
+								continue;
+							
+							elif params["method"] in path.methods:
+								if url in path.methods[params["method"]]:
+									for s_id in path.methods[params["method"]][url]["sources"]:
+										if s_id in sources:
+											del sources[s_id];
 
-                    break;
+									del path.methods[params["method"]][url];
+				
+							path.methods[params["method"]] = {
+								url : 
+								{
+									"request" :  {"method" : method, "headers" : "", "data" : "" , "encoded" : ""},
+									"response" : { "headers" : "", "data" : "", "encoded" : "" },
+									"source_id" : source_id,
+									"sources" : set([source_id]),
+									"scheme" : scheme,
+									"path" : path,
+								},
+							};
 
+							sources[source_id] = path.methods[params["method"]][url];
+							print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
+							pass;
 
+					if "headers" in params:
 
+						if event_type in ["HTTP2_SESSION_SEND_HEADERS", "CORS_REQUEST", "URL_REQUEST_START_JOB", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
+							sources[source_id]["request"]["headers"] = params["headers"];
+					
+						elif event_type in ["HTTP2_SESSION_RECV_HEADERS", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
+							sources[source_id]["response"]["headers"] = params["headers"];
 
+						else:
 
-def main():
-    
-    hosts = {
+							print("DEBUG - HEADERS: Unkwown event type %s from source type %s with parameters keys as (%s)"%(event_type, source_type, ",".join(params.keys())));
 
-        'pinnacle.com' : [ 
-            {'route' : '/0.1/matchups' , 'cache' :  TIME_ZONE},
-            {'route' : '/0.1/leagues' , 'cache' :  TIME_ZONE},
-            {'route' : '/0.1/status' , 'cache' :  TIME_ZONE},
-        ],
+					if "bytes" in params:
 
-    };
+						if event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ"]:
+							sources[source_id]["response"]["data"] += params["bytes"];
 
+						elif event_type in ["URL_REQUEST_JOB_BYTES_READ"]:
+							sources[source_id]["response"]["encoded"] +=  params["bytes"];
+							
+						else:
 
-    scan_hosts(dir_path = '.\logs', hosts = hosts);
+							print("DEBUG - BYTES: Unkwown event type %s from source type %s with parameters keys as (%s)"%(event_type, source_type, ",".join(params.keys())));
 
+					if phase == "PHASE_END" and len(sources[source_id]["response"]["data"]) > 0:
+						handle_url_request(sources[source_id]);
 
-if __name__ == '__main__':
-    main()
-
+				if datetime.now().timestamp() - CACHE_DURATION > os.stat(file_path).st_mtime and nth_byte > os.stat(file_path).st_size - n_bytes and buff[-1] == "":
+					print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
+					break;
