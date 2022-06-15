@@ -267,5 +267,3 @@ async def read_log(file_path, profile) -> None:
 				if datetime.now().timestamp() - CACHE_DURATION > os.stat(file_path).st_mtime and nth_byte > os.stat(file_path).st_size - n_bytes and buff[-1] == "":
 					print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
 					break;
-		
-				
