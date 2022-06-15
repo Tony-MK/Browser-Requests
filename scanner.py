@@ -16,13 +16,13 @@ SCREEN_WIDTH = 150;
 
 DASHED_LINE = '-'.join([''] * SCREEN_WIDTH) + "\n";
 
-CACHE_DURATION : int = 3600 ;
+CACHE_DURATION : int = 900 ;
 
 BLOCK_SIZE : int = MEGA_BYTE * 32
 
 UTC_DELTA : int = int(datetime.now().timestamp() - datetime.utcnow().timestamp()) * 1000
 
-file_stats = lambda file, file_path : "%s (%d mins ago) %.1f/%.1f MB (%.2f%%)"%(file.name.split("\\")[-1], round(datetime.now().timestamp() - os.stat(file_path).st_mtime) * 60, file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 )
+file_stats = lambda file, file_path : "%s (%d mins ago) %.1f/%.1f MB (%.2f%%)"%(file.name.split("\\")[-1], round(datetime.now().timestamp() - os.stat(file_path).st_mtime) / 60, file.tell() / MEGA_BYTE, os.stat(file_path).st_size / MEGA_BYTE, file.tell() / os.stat(file_path).st_size * 100 )
 
 IGNORE_SOURCE_TYPES = [
 	8 # SOCKET
@@ -57,7 +57,6 @@ def handle_url_request(url_req : dict) -> None:
 		
 	try:
 
-		
 		query = url_req["path"].endpoints[url_req["request"]["method"]];
 
 		getattr(
@@ -86,6 +85,9 @@ def handle_url_request(url_req : dict) -> None:
 
 async def standby(nth_byte: int, file, file_path: str, sleep_duration = 3, wait_duration = 300) -> None:
 
+	if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
+		print("EXPIRED - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)));
+		return True;
 
 	for duration in range(0, wait_duration, sleep_duration):
 		
@@ -95,8 +97,7 @@ async def standby(nth_byte: int, file, file_path: str, sleep_duration = 3, wait_
 		elif duration%sleep_duration == 0:
 
 			print("STANDBY - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)));
-
-		await asyncio.sleep(sleep_duration);
+			await asyncio.sleep(sleep_duration);
 
 
 async def valiadate_log(file_path : str):
@@ -154,7 +155,10 @@ async def read_log(file_path, profile) -> None:
 
 				nth_iteration += 1;
 
-				await standby(file = file, file_path = file_path, nth_byte = nth_byte)
+				if await standby(file = file, file_path = file_path, nth_byte = nth_byte):
+					print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
+					break;
+
 
 				nth_byte = nth_byte - n_bytes;
 				file.seek(nth_byte, os.SEEK_SET);
@@ -260,7 +264,7 @@ async def read_log(file_path, profile) -> None:
 					if phase == "PHASE_END" and len(sources[source_id]["response"]["data"]) > 0:
 						handle_url_request(sources[source_id]);
 
-				if datetime.now().timestamp() - CACHE_DURATION > os.stat(file_path).st_mtime and nth_byte > os.stat(file_path).st_size - 30 and buff[-1] == "":
+				if datetime.now().timestamp() - CACHE_DURATION > os.stat(file_path).st_mtime and nth_byte > os.stat(file_path).st_size - n_bytes and buff[-1] == "":
 					print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
 					break;
 		
