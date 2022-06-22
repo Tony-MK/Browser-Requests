@@ -57,3 +57,7 @@ def decode_headers(headers):
 		headers[0] = "version: " + headers[0];
 	
 	return dict(tuple(map(lambda header : header.split(': '), headers)));
+
+
+if __name__ == '__main__':
+	pass

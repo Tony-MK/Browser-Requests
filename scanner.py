@@ -16,7 +16,7 @@ SCREEN_WIDTH = 150;
 
 DASHED_LINE = '-'.join([''] * SCREEN_WIDTH) + "\n";
 
-CACHE_DURATION : int = 900 ;
+CACHE_DURATION : int = 3600;
 
 BLOCK_SIZE : int = MEGA_BYTE * 32
 
@@ -269,3 +269,5 @@ async def read_log(file_path, profile) -> None:
 					break;
 		
 				
+if __name__ == '__main__':
+	pass
