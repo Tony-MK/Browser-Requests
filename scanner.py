@@ -10,13 +10,13 @@ decode = __import__("decode")
 
 
 KILO_BYTE : int = 1024
-MEGA_BYTE : int = 1024 ** 2;
+MEGA_BYTE : int = 1024 ** 2
 
-SCREEN_WIDTH = 150;
+SCREEN_WIDTH = 150
 
-DASHED_LINE = '-'.join([''] * SCREEN_WIDTH) + "\n";
+DASHED_LINE = '-'.join([''] * SCREEN_WIDTH) + "\n"
 
-CACHE_DURATION : int = 3600;
+CACHE_DURATION : int = 7200
 
 BLOCK_SIZE : int = MEGA_BYTE * 32
 
@@ -26,17 +26,17 @@ file_stats = lambda file, file_path : "%s (%d mins ago) %.1f/%.1f MB (%.2f%%)"%(
 
 IGNORE_SOURCE_TYPES = [
 	8 # SOCKET
-];
+]
 
 
 def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True, n_file_paths = 9999) -> list:
 
-	file_paths = glob.glob(dir_path + "/*.json");
+	file_paths = glob.glob(dir_path + "/*.json")
 
 	if len(file_paths) == 0:
-		return file_paths;
+		return file_paths
 		
-	file_paths.sort(key = lambda file_path : os.stat(file_path).st_mtime , reverse = True);
+	file_paths.sort(key = lambda file_path : os.stat(file_path).st_mtime , reverse = True)
 
 	min_mtime =  datetime.now().timestamp() - modified 
 
@@ -50,14 +50,14 @@ def get_file_paths(dir_path : str, modified = CACHE_DURATION, latest = True, n_f
 
 
 def data_to_str(data: str, n_bytes = 100) -> None:
-	return data if n_bytes > len(data) else data[:n_bytes] + "\n" + ".".join([""] * n_bytes) + "\n" + data[-n_bytes:];
+	return data if n_bytes > len(data) else data[:n_bytes] + "\n" + ".".join([""] * n_bytes) + "\n" + data[-n_bytes:]
 
 
 def handle_url_request(url_req : dict) -> None:
 		
 	try:
 
-		query = url_req["path"].endpoints[url_req["request"]["method"]];
+		query = url_req["path"].endpoints[url_req["request"]["method"]]
 
 		getattr(
 			url_req["path"].resource, 
@@ -65,10 +65,10 @@ def handle_url_request(url_req : dict) -> None:
 				query['decoder'](
 					base64.b64decode(url_req["response"]["data"]).decode('UTF-8', 'ignore')
 				)
-		);
+		)
 	
 	except json.decoder.JSONDecodeError as e:
-		pass;
+		pass
 
 	except Exception as e:
 	
@@ -77,196 +77,191 @@ def handle_url_request(url_req : dict) -> None:
 			print(DASHED_LINE + "%s %s\nHeaders : %d Data : %d"%(req["method"].upper(), url_req["path"].url, len(req["headers"]), len(req["data"])), end = ' | ')
 			print("Encoded: {:d} Headers : {:d} Data : {:d}".format(len(resp["encoded"]), len(resp["headers"]), len(resp["data"])))
 			print(data_to_str(resp["data"]))
-			print("FAILED TO HANDLE RESPONSE %s\n"%(e));
+			print("FAILED TO HANDLE RESPONSE %s\n"%(e))
 			traceback.print_exc()
-			print(DASHED_LINE);
+			print(DASHED_LINE)
 	
 
 
-async def standby(nth_byte: int, file, file_path: str, sleep_duration = 3, wait_duration = 300) -> None:
+async def standby(nth_byte: int, file, file_path: str, sleep_duration = 3, wait_duration = 900) -> None:
 
-	if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
-		print("EXPIRED - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)));
-		return True;
+	print("STANDBY - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)))
 
 	for duration in range(0, wait_duration, sleep_duration):
 		
+		await asyncio.sleep(sleep_duration)
+
 		if os.stat(file_path).st_size != nth_byte:
-			return;
+			return
 
-		elif duration%sleep_duration == 0:
-
-			print("STANDBY - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)));
-			await asyncio.sleep(sleep_duration);
-
+	
 
 async def valiadate_log(file_path : str):
 
 	while MEGA_BYTE > os.stat(file_path).st_size:
 
 		if datetime.now().timestamp() - os.stat(file_path).st_mtime > 300:
-			print("SMALL LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
-			return False;
+			print("SMALL LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path))
+			return False
 		
-		print("AWAIT NEW LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path));
-		await asyncio.sleep(3);
+		print("AWAIT NEW LOG FILE : %d Bytes %s"%(os.stat(file_path).st_size, file_path))
+		await asyncio.sleep(3)
 
-def read_constants(file):
+def read_constants(file) -> dict:
 
-	constants = file.readline();
+	constants = file.readline()
 
-	constants = json.loads(constants.strip(",\n") + "}" )["constants"];
+	constants = json.loads(constants.strip(",\n") + "}" )["constants"]
 
-	constants["logEventPhaseMap"] = {constants["logEventPhase"][c] : c  for c in constants["logEventPhase"]};
+	constants["logEventPhaseMap"] = {constants["logEventPhase"][c] : c  for c in constants["logEventPhase"]}
 
-	constants["logSourceTypeMap"] = {constants["logSourceType"][c] : c  for c in constants["logSourceType"]};
+	constants["logSourceTypeMap"] = {constants["logSourceType"][c] : c  for c in constants["logSourceType"]}
 
-	constants["logEventTypesMap"] = {constants["logEventTypes"][c] : c  for c in constants["logEventTypes"]};
+	constants["logEventTypesMap"] = {constants["logEventTypes"][c] : c  for c in constants["logEventTypes"]}
 
-	constants["timeTickOffset"] = int(constants["timeTickOffset"]) - UTC_DELTA;
+	constants["timeTickOffset"] = int(constants["timeTickOffset"]) - UTC_DELTA
 
-	return constants;
+	return constants
 
-async def read_log(file_path, profile) -> None:
+async def read_log(hosts : list, file_path : str) -> None:
 	
 	if await valiadate_log(file_path) == False:
-		return;
+		return
 	
 	with open(file_path, "r") as file:
 		
 		try:
 
-			constants, sources = read_constants(file), dict();
+			constants, sources = read_constants(file), dict()
 
 		except json.decoder.JSONDecodeError:
-			print("\n\nCONSTANTS DECODE ERROR : %s\n\n"%(file_stats(file, file_path)));
-			pass;
+			print("\n\nCONSTANTS DECODE ERROR : %s\n\n"%(file_stats(file, file_path)))
 
 		else:
-	
-			file.readline();
-			file.readline();
+
+			file.readline()
+			file.readline()
 			
-			nth_byte, n_bytes, nth_iteration, buff  = file.tell(), 0, 0, list();
+			nth_byte, n_bytes, buff  = file.tell(), 0, []
 
 			while True:
 
-				del buff;
+				del buff
 
-				nth_iteration += 1;
+				if datetime.now().timestamp() - os.stat(file_path).st_mtime > CACHE_DURATION:
+					print("EXPIRED - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)))
 
-				if await standby(file = file, file_path = file_path, nth_byte = nth_byte):
-					print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
-					break;
+					if nth_byte > os.stat(file_path).st_size - n_bytes:
 
+						print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)))
+						break
 
-				nth_byte = nth_byte - n_bytes;
-				file.seek(nth_byte, os.SEEK_SET);
-				buff = file.read(BLOCK_SIZE);
-				nth_byte += len(buff);
+				await standby(nth_byte, file, file_path)
+
+				nth_byte = nth_byte - n_bytes
+
+				file.seek(nth_byte, os.SEEK_SET)
+				buff = file.read(BLOCK_SIZE)
+
+				nth_byte += len(buff)
 
 				buff = buff.split(",\n")
-				n_bytes = len(buff[-1]);
+				n_bytes = len(buff[-1])
 
-				for event in buff:
+				for event in buff[:-1]:
 					
-					event = decode.decode_event(event, constants);
+					event = decode.decode_event(event, constants)
 
 					if event == None:
-						continue;
+						continue
 
-					source_id, source_type = event["source"]["id"], event["source"]["type"]; del event["source"];
-					event_type = event["type"]; del event["type"];
-					params = event["params"]; del event["params"];
-					phase = event["phase"]; del event["phase"];
-					_ = event["time"]; del event["time"];
-					del event;
+					source_id, source_type = event["source"]["id"], event["source"]["type"]
+					event_type = event["type"]				
+					params = event["params"]
+					phase = event["phase"]
+					#_ = event["time"]
+
+					del event
 
 					if source_id not in sources:
 
 						if "source_dependency" in params and params["source_dependency"]["id"] in sources:
-							sources[source_id] = sources[params["source_dependency"]["id"]];
+							sources[source_id] = sources[params["source_dependency"]["id"]]
 
 							# Adding to sources set
-							sources[source_id]["sources"].add(source_id);
+							sources[source_id]["sources"].add(source_id)
 
 						
 						elif "url" not in params or "method" not in params:
-							#print("%s - Source Id %d was not Found : %s"%(event_type, source_id, params.keys()), end = "\n");
-							continue;
+							#print("%s - Source Id %d was not Found : %s"%(event_type, source_id, params.keys()), end = "\n")
+							continue
 
 						else:
 
-							url = params["url"];
+							url = params["url"]
 
-							scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:];
+							scheme, url = url[:url.find("://") + 3], url[url.find("://") + 3:]
 
-							host = url[:url.find('/')];
+							host = url[:url.find('/')]
 
-							if host not in profile.Hosts:
-								continue;
+							if host in hosts:
 
-							path = profile.Hosts[host].find(url[url.find('/') + 1:].split("?")[0].split("/"));
+								path = hosts[host].find(url[url.find('/') + 1:].split("?")[0].split("/"))
 
-							method = params["method"].lower();
+								method = params["method"].lower()
 
-							if path == None or path.resource == None or method not in path.endpoints:
-								continue;
-							
-							elif params["method"] in path.methods:
-								if url in path.methods[params["method"]]:
-									for s_id in path.methods[params["method"]][url]["sources"]:
-										if s_id in sources:
-											del sources[s_id];
+								if path == None or path.resource == None or method not in path.endpoints:
+									continue
+								
+								elif params["method"] in path.methods:
+									if url in path.methods[params["method"]]:
+										for s_id in path.methods[params["method"]][url]["sources"]:
+											if s_id in sources:
+												del sources[s_id]
 
-									del path.methods[params["method"]][url];
-				
-							path.methods[params["method"]] = {
-								url : 
-								{
-									"request" :  {"method" : method, "headers" : "", "data" : "" , "encoded" : ""},
-									"response" : { "headers" : "", "data" : "", "encoded" : "" },
-									"source_id" : source_id,
-									"sources" : set([source_id]),
-									"scheme" : scheme,
-									"path" : path,
-								},
-							};
+										del path.methods[params["method"]][url]
+					
+								path.methods[params["method"]] = {
+									url : 
+									{
+										"request" :  {"method" : method, "headers" : "", "data" : "" , "encoded" : ""},
+										"response" : { "headers" : "", "data" : "", "encoded" : "" },
+										"source_id" : source_id,
+										"sources" : set([source_id]),
+										"scheme" : scheme,
+										"path" : path,
+									},
+								}
 
-							sources[source_id] = path.methods[params["method"]][url];
-							print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url));
-							pass;
+								sources[source_id] = path.methods[params["method"]][url]
+								print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url))
 
 					if "headers" in params:
 
 						if event_type in ["HTTP2_SESSION_SEND_HEADERS", "CORS_REQUEST", "URL_REQUEST_START_JOB", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"]:
-							sources[source_id]["request"]["headers"] = params["headers"];
+							sources[source_id]["request"]["headers"] = params["headers"]
 					
 						elif event_type in ["HTTP2_SESSION_RECV_HEADERS", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]:
-							sources[source_id]["response"]["headers"] = params["headers"];
+							sources[source_id]["response"]["headers"] = params["headers"]
 
 						else:
 
-							print("DEBUG - HEADERS: Unkwown event type %s from source type %s with parameters keys as (%s)"%(event_type, source_type, ",".join(params.keys())));
+							print("DEBUG - HEADERS: Unkwown event type %s from source type %s with parameters keys as (%s)"%(event_type, source_type, ",".join(params.keys())))
 
 					if "bytes" in params:
 
 						if event_type in ["URL_REQUEST_JOB_FILTERED_BYTES_READ"]:
-							sources[source_id]["response"]["data"] += params["bytes"];
+							sources[source_id]["response"]["data"] += params["bytes"]
 
 						elif event_type in ["URL_REQUEST_JOB_BYTES_READ"]:
-							sources[source_id]["response"]["encoded"] +=  params["bytes"];
+							sources[source_id]["response"]["encoded"] +=  params["bytes"]
 							
 						else:
 
-							print("DEBUG - BYTES: Unkwown event type %s from source type %s with parameters keys as (%s)"%(event_type, source_type, ",".join(params.keys())));
+							print("DEBUG - BYTES: Unkwown event type %s from source type %s with parameters keys as (%s)"%(event_type, source_type, ",".join(params.keys())))
 
 					if phase == "PHASE_END" and len(sources[source_id]["response"]["data"]) > 0:
-						handle_url_request(sources[source_id]);
-
-				if datetime.now().timestamp() - CACHE_DURATION > os.stat(file_path).st_mtime and nth_byte > os.stat(file_path).st_size - n_bytes and buff[-1] == "":
-					print("\n\nCOMPLETED : %s\n\n"%(file_stats(file, file_path)));
-					break;
+						handle_url_request(sources[source_id])
 		
 				
 if __name__ == '__main__':
