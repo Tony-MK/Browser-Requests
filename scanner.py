@@ -91,7 +91,7 @@ async def await_change(nth_byte: int, file, file_path: str, sleep_duration = 3, 
 		
 		await asyncio.sleep(sleep_duration)
 
-	print("UNCHANGED - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)))
+	#print("UNCHANGED - Bytes : %.3f MB %s"%(nth_byte / MEGA_BYTE, file_stats(file, file_path)))
 
 async def valiadate_log(file_path : str):
 
@@ -240,7 +240,7 @@ async def read_log(hosts : list, file_path : str, cache_duration = DEFAULT_CACHE
 									}
 
 									sources[source_id] = path.methods[params["method"]][url]
-									print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url))
+									#print("\n%d) %s - %s %s%s"%(len(sources), event_type, params["method"], scheme, url))
 
 						if "headers" in params:
 
