@@ -1,3 +1,2 @@
-# Browser Traffic
-
-Retrieve and save traffic made by a browser.
+# Browser-Requests
+Retrieve requests made by the browser
