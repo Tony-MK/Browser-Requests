@@ -2,7 +2,7 @@
 
 Fetch the network traffic made by a Google Chrome or Microsoft Edge browser.
 
-# Network Logs
+## Network Logs
 
 To enable and fetch network logging in the browser, follow these steps.
 
